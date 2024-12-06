@@ -4,8 +4,13 @@ from typing import Optional
 from uuid import UUID
 import json
 import os
+from datetime import datetime, date
+import traceback
 from models.profile import Profile, ProfileCreate
 from supabase import create_client
+import asyncio
+from services.profile import ProfileService
+from io import BytesIO
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -17,38 +22,47 @@ supabase = create_client(
 
 @router.post("")
 async def create_profile(
-   profile_image: UploadFile = File(...),
-   profile: str = Form(...)
+  profile_image: UploadFile = File(...),
+  profile: str = Form(...)
 ):
-   try:
-       profile_data = json.loads(profile)
-       first_name = profile_data.get("first_name")
-       last_name = profile_data.get("last_name")
+  try:
+      profile_data = json.loads(profile)
+      # print("Profile data before creation:", profile_data)  # Debug print
+      first_name = profile_data.get("first_name")
+      last_name = profile_data.get("last_name")
+      profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
 
-       if not first_name or not last_name:
-           raise ValueError("Both first_name and last_name are required.")
-           
-       # Upload profile image to Supabase storage
-       
-       # Construct file path for the image
-       file_path = f"profile_images/{first_name}_{last_name}.jpg"
-       result = supabase.storage.from_("profile-images").upload(
-           file_path,
-           profile_image.file.read(),
-       )
+      if not first_name or not last_name:
+          raise ValueError("Both first_name and last_name are required.")
 
-       # Get public URL for the image
-       image_url = supabase.storage.from_("profile-images").get_public_url(file_path)
+      file_path = f"profile_images/{first_name}_{last_name}.jpg"
+      file_content = await profile_image.read()
+      
+      try:
+          supabase.storage.from_("profile-images").remove([file_path])
+      except:
+          pass
 
-       # Create profile with image URL
-       profile_data["profile_image_url"] = image_url
-       return await Profile.create(profile_data)
-   except Exception as e:
-       print(f"Validation error: {str(e)}")  # Debug print
-       raise HTTPException(
-           status_code=500, 
-           detail=f"Error processing profile: {str(e)}"
-       )
+      result = supabase.storage.from_("profile-images").upload(
+          path=file_path,
+          file=file_content,
+          file_options={"content-type": profile_image.content_type}
+      )
+
+      image_url = supabase.storage.from_("profile-images").get_public_url(file_path)
+      profile_data["profile_image_url"] = image_url
+
+      profile_create = ProfileCreate(**profile_data)
+      return await ProfileService.create_profile(profile_create)
+
+  except Exception as e:
+      tb = traceback.extract_tb(e.__traceback__)[-1]
+      error_info = f"Error in {tb.filename}, line {tb.lineno}: {str(e)}"
+      print(f"Validation error: {error_info}")
+      raise HTTPException(
+          status_code=500, 
+          detail=f"Error processing profile: {error_info}"
+      )
 
 @router.get("/{profile_id}")
 async def get_profile(profile_id: UUID):
