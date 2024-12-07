@@ -39,6 +39,28 @@ class Profile(ProfileBase):
 class ProfileService:
     table_name = "profiles"
 
+    @classmethod  # Changed from @staticmethod to @classmethod since we need cls
+    async def get_all_profiles(cls) -> List[Profile]:
+        """Get all profiles"""
+        try:
+            result = supabase.table(cls.table_name).select("*").order(
+                'updated_at', desc=True
+            ).execute()
+
+            return [
+                Profile(
+                    **{
+                        **profile,
+                        'date_of_birth': datetime.fromisoformat(profile['date_of_birth']).date(),
+                        'created_at': datetime.fromisoformat(profile['created_at']),
+                        'updated_at': datetime.fromisoformat(profile['updated_at'])
+                    }
+                )
+                for profile in result.data
+            ]
+        except Exception as e:
+            raise Exception(f"Failed to fetch profiles: {str(e)}")
+    
     @staticmethod
     async def create_profile(profile_data: ProfileCreate) -> Profile:
         """

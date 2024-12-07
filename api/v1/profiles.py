@@ -11,6 +11,8 @@ from supabase import create_client
 import asyncio
 from services.profile import ProfileService
 from io import BytesIO
+from typing import List
+from models.profile import Profile
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -20,6 +22,17 @@ supabase = create_client(
     supabase_key = os.getenv("SUPABASE_KEY")
 )
 
+@router.get("")
+async def list_profiles() -> List[Profile]:
+    """Get all profiles"""
+    try:
+        profiles = await ProfileService.get_all_profiles()
+        return profiles
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch profiles: {str(e)}")
+            
 @router.post("")
 async def create_profile(
   profile_image: UploadFile = File(...),

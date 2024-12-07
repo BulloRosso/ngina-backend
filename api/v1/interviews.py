@@ -4,6 +4,9 @@ from typing import Optional
 from uuid import UUID
 from services.sentiment import EmpatheticInterviewer
 from models.memory import InterviewResponse, InterviewQuestion
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
@@ -25,3 +28,24 @@ async def process_response(
         response.text,
         response.language
     )
+
+@router.get("/{profile_id}/question")
+async def get_next_question(
+    profile_id: UUID,
+    session_id: UUID
+):
+    """Get the next interview question based on the session context."""
+    try:
+        interviewer = EmpatheticInterviewer()
+        result = await interviewer.generate_next_question(profile_id, session_id)
+        return {
+            "text": result,
+            "suggested_topics": [],  # Optional: Could be generated based on previous responses
+            "requires_media": False  # Optional: Could be set based on question context
+        }
+    except Exception as e:
+        logger.error(f"Error generating next question: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate next question"
+        )

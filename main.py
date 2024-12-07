@@ -1,3 +1,4 @@
+# /main.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api.v1 import router as v1_router
@@ -16,8 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.DEBUG)
+# logger = logging.getLogger(__name__)
 
 # @app.middleware("http")
 # async def log_requests(request: Request, call_next):
