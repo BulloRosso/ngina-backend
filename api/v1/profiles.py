@@ -13,6 +13,9 @@ from services.profile import ProfileService
 from io import BytesIO
 from typing import List
 from models.profile import Profile
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -79,21 +82,21 @@ async def create_profile(
 
 @router.get("/{profile_id}")
 async def get_profile(profile_id: UUID):
-   try:
-       return await Profile.get(profile_id)
-   except Exception as e:
-       raise HTTPException(status_code=404, detail=str(e))
+    """Get a profile by ID"""
+    try:
+        logger.debug(f"Fetching profile with ID: {profile_id}")
+        service = ProfileService()  # Create instance
+        profile = await service.get_profile(profile_id)  # Call instance method
 
-@router.put("/{profile_id}")
-async def update_profile(profile_id: UUID, profile: ProfileCreate):
-   try:
-       return await Profile.update(profile_id, profile)
-   except Exception as e:
-       raise HTTPException(status_code=404, detail=str(e))
+        if not profile:
+            logger.debug(f"Profile not found: {profile_id}")
+            raise HTTPException(status_code=404, detail="Profile not found")
 
-@router.delete("/{profile_id}")
-async def delete_profile(profile_id: UUID):
-   try:
-       return await Profile.delete(profile_id)
-   except Exception as e:
-       raise HTTPException(status_code=404, detail=str(e))
+        return profile
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error fetching profile: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+

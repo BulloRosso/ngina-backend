@@ -3,63 +3,61 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, UUID4
 from supabase import create_client, Client
 import os
+import logging
+from models.profile import Profile, ProfileCreate
 
-
-# Environment Configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-# Initialize Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-# Pydantic Models
-class ProfileBase(BaseModel):
-    first_name: str
-    last_name: str
-    date_of_birth: date
-    place_of_birth: str
-    gender: str
-    children: Optional[List[str]] = Field(default_factory=list)
-    spoken_languages: Optional[List[str]] = Field(default_factory=list)
-    profile_image_url: Optional[str] = None
-
-
-class ProfileCreate(ProfileBase):
-    pass
-
-
-class Profile(ProfileBase):
-    id: UUID4
-    created_at: datetime
-    updated_at: datetime
-
+logger = logging.getLogger(__name__)
 
 # Service Class
 class ProfileService:
     table_name = "profiles"
 
-    @classmethod  # Changed from @staticmethod to @classmethod since we need cls
+    def __init__(self):
+        self.supabase = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+        self.table_name = "profiles"
+
+    @classmethod
     async def get_all_profiles(cls) -> List[Profile]:
         """Get all profiles"""
         try:
-            result = supabase.table(cls.table_name).select("*").order(
+            service = cls()
+            result = service.supabase.table(service.table_name).select("*").order(
                 'updated_at', desc=True
             ).execute()
 
-            return [
-                Profile(
-                    **{
-                        **profile,
-                        'date_of_birth': datetime.fromisoformat(profile['date_of_birth']).date(),
-                        'created_at': datetime.fromisoformat(profile['created_at']),
-                        'updated_at': datetime.fromisoformat(profile['updated_at'])
-                    }
-                )
-                for profile in result.data
-            ]
+            profiles = []
+            for profile_data in result.data:
+                try:
+                    # Convert date strings
+                    if isinstance(profile_data['date_of_birth'], str):
+                        profile_data['date_of_birth'] = datetime.fromisoformat(
+                            profile_data['date_of_birth']
+                        ).date()
+
+                    if isinstance(profile_data['created_at'], str):
+                        profile_data['created_at'] = datetime.fromisoformat(
+                            profile_data['created_at']
+                        )
+
+                    if isinstance(profile_data['updated_at'], str):
+                        profile_data['updated_at'] = datetime.fromisoformat(
+                            profile_data['updated_at']
+                        )
+
+                    profiles.append(Profile(**profile_data))
+                except Exception as e:
+                    logger.error(f"Error converting profile data: {str(e)}")
+                    logger.error(f"Problematic profile data: {profile_data}")
+                    continue
+
+            return profiles
+
         except Exception as e:
-            raise Exception(f"Failed to fetch profiles: {str(e)}")
+            logger.error(f"Error fetching all profiles: {str(e)}")
+            raise
     
     @staticmethod
     async def create_profile(profile_data: ProfileCreate) -> Profile:
@@ -93,25 +91,46 @@ class ProfileService:
         except Exception as e:
             raise Exception(f"Failed to create profile: {str(e)}")
 
-    @staticmethod
-    async def get_profile(profile_id: UUID4) -> Optional[Profile]:
-        """
-        Retrieves a profile by ID.
-        """
+    async def get_profile(self, profile_id: UUID4) -> Optional[Profile]:
+        """Retrieves a profile by ID"""
         try:
+            logger.debug(f"Fetching profile with ID: {profile_id}")
+
             # Fetch the profile from Supabase
-            response = supabase.table(ProfileService.table_name).select("*").eq("id", str(profile_id)).execute()
+            result = self.supabase.table(self.table_name)\
+                .select("*")\
+                .eq("id", str(profile_id))\
+                .execute()
 
-            # Check for errors
-            if response.get("error"):
-                raise Exception(f"Supabase error: {response['error']['message']}")
+            if not result.data:
+                return None
 
-            if response["data"]:
-                profile = Profile(**response["data"][0])
-                return profile
-            return None
+            profile_data = result.data[0]
+
+            # Convert date strings to proper date objects
+            if isinstance(profile_data['date_of_birth'], str):
+                profile_data['date_of_birth'] = datetime.fromisoformat(
+                    profile_data['date_of_birth']
+                ).date()
+
+            if isinstance(profile_data['created_at'], str):
+                profile_data['created_at'] = datetime.fromisoformat(
+                    profile_data['created_at']
+                )
+
+            if isinstance(profile_data['updated_at'], str):
+                profile_data['updated_at'] = datetime.fromisoformat(
+                    profile_data['updated_at']
+                )
+
+            return Profile(**profile_data)
+
         except Exception as e:
-            raise Exception(f"Failed to retrieve profile: {str(e)}")
+            logger.error(f"Error in get_profile: {str(e)}")
+            logger.error(f"Profile ID: {profile_id}")
+            logger.error(f"Profile data: {profile_data if 'profile_data' in locals() else 'No data fetched'}")
+            raise
+
 
     @staticmethod
     async def update_profile(profile_id: UUID4, profile_data: ProfileCreate) -> Profile:

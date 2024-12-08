@@ -12,6 +12,17 @@ class Category(str, Enum):
     HOBBIES = "hobbies"
     PETS = "pets"
 
+    @classmethod
+    def _missing_(cls, value):
+        """Handle case when enum value has 'Category.' prefix"""
+        if isinstance(value, str):
+            # Remove 'Category.' prefix if it exists
+            clean_value = value.replace('Category.', '').lower()
+            for member in cls:
+                if member.value.lower() == clean_value:
+                    return member
+        return None
+
 class Person(BaseModel):
     name: str
     relation: str

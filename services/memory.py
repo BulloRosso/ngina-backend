@@ -21,7 +21,32 @@ class MemoryService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
+    @classmethod
+    async def delete_memory(cls, memory_id: UUID) -> bool:
+        """Delete a memory by ID"""
+        try:
+            logger.debug(f"Attempting to delete memory with ID: {memory_id}")
+            instance = cls.get_instance()
 
+            # Delete the memory from Supabase
+            result = instance.supabase.table(cls.table_name).delete().eq(
+                "id", str(memory_id)
+            ).execute()
+
+            logger.debug(f"Delete response: {result}")
+
+            # Check if deletion was successful
+            if not result.data:
+                logger.warning(f"No memory found with ID {memory_id}")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting memory: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Failed to delete memory: {str(e)}")
+            
     @staticmethod
     def get_instance():
         if not hasattr(MemoryService, "_instance"):
