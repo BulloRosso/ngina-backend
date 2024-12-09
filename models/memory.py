@@ -49,6 +49,16 @@ class MemoryCreate(BaseModel):
     image_urls: List[str] = []
     audio_url: Optional[str]
 
+class MemoryUpdate(BaseModel):
+    category: Optional[str] = None
+    description: Optional[str] = None
+    time_period: Optional[datetime] = None
+    location: Optional[dict] = None
+    people: Optional[List[dict]] = None
+    emotions: Optional[List[dict]] = None
+    image_urls: Optional[List[str]] = None
+    audio_url: Optional[str] = None
+
 class Memory(MemoryCreate):
     id: UUID4
     profile_id: UUID4

@@ -7,6 +7,9 @@ import os
 from datetime import datetime
 import logging
 import traceback
+import io
+from PIL import Image
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -14,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 class MemoryService:
     table_name = "memories"
-
+    storage_bucket = "memory-media"
+    
     def __init__(self):
         logger.debug("Initializing MemoryService")
         self.supabase = create_client(
@@ -46,6 +50,49 @@ class MemoryService:
             logger.error(f"Error deleting memory: {str(e)}")
             logger.error(traceback.format_exc())
             raise Exception(f"Failed to delete memory: {str(e)}")
+
+    @classmethod
+    async def update_memory(cls, memory_id: UUID, memory_data: dict) -> bool:
+        """Update a memory by ID"""
+        try:
+            logger.debug(f"Attempting to update memory with ID: {memory_id}")
+            logger.debug(f"Update data: {memory_data}")
+
+            instance = cls.get_instance()
+
+            # Handle time_period field name conversion
+            if "time_period" in memory_data:
+                time_period = memory_data["time_period"]
+                # Ensure it's in ISO format if it's not already
+                if isinstance(time_period, datetime):
+                    time_period = time_period.isoformat()
+                memory_data["time_period"] = time_period
+
+            # Add updated_at timestamp
+            update_data = {
+                **memory_data,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            # Update the memory in Supabase
+            result = instance.supabase.table(cls.table_name)\
+                .update(update_data)\
+                .eq("id", str(memory_id))\
+                .execute()
+
+            logger.debug(f"Update response: {result}")
+
+            # Check if update was successful
+            if not result.data:
+                logger.warning(f"No memory found with ID {memory_id}")
+                return False
+
+            return result.data[0]
+
+        except Exception as e:
+            logger.error(f"Error updating memory: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Failed to update memory: {str(e)}")
             
     @staticmethod
     def get_instance():
@@ -141,3 +188,69 @@ class MemoryService:
             logger.error(f"Error in create_memory: {str(e)}")
             logger.error(traceback.format_exc())
             raise Exception(f"Failed to create memory: {str(e)}")
+
+    @classmethod
+    async def add_media_to_memory(cls, memory_id: UUID, files: List[bytes], content_types: List[str]) -> dict:
+        """Add media files to a memory and return the URLs"""
+        try:
+            logger.debug(f"Adding media to memory {memory_id}")
+            instance = cls.get_instance()
+
+            # Verify memory exists
+            memory = instance.supabase.table(cls.table_name)\
+                .select("image_urls")\
+                .eq("id", str(memory_id))\
+                .execute()
+
+            if not memory.data:
+                raise Exception("Memory not found")
+
+            current_urls = memory.data[0].get('image_urls', [])
+            new_urls = []
+
+            for idx, (file_content, content_type) in enumerate(zip(files, content_types)):
+                try:
+                    # Generate unique filename
+                    file_ext = "jpg" if "jpeg" in content_type.lower() else "png"
+                    filename = f"{memory_id}/{uuid.uuid4()}.{file_ext}"
+
+                    # Upload to Supabase Storage
+                    result = instance.supabase.storage\
+                        .from_(cls.storage_bucket)\
+                        .upload(
+                            path=filename,
+                            file=file_content,
+                            file_options={"content-type": content_type}
+                        )
+
+                    if hasattr(result, 'error') and result.error:
+                        raise Exception(f"Upload error: {result.error}")
+
+                    # Get public URL
+                    url = instance.supabase.storage\
+                        .from_(cls.storage_bucket)\
+                        .get_public_url(filename)
+
+                    new_urls.append(url)
+
+                except Exception as e:
+                    logger.error(f"Error uploading file {idx}: {str(e)}")
+                    continue
+
+            # Update memory with new URLs
+            updated_urls = current_urls + new_urls
+            update_result = instance.supabase.table(cls.table_name)\
+                .update({"image_urls": updated_urls})\
+                .eq("id", str(memory_id))\
+                .execute()
+
+            return {
+                "message": "Media added successfully",
+                "urls": new_urls,
+                "total_urls": len(updated_urls)
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding media: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Failed to add media: {str(e)}")

@@ -1,16 +1,57 @@
 # api/v1/memories.py
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from typing import List
 from uuid import UUID
-from models.memory import Memory, MemoryCreate
+from models.memory import Memory, MemoryCreate, MemoryUpdate
 from services.memory import MemoryService
 import logging
 import traceback
+from pydantic import BaseModel
+from datetime import datetime
+import io
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/memories", tags=["memories"])
+
+@router.put("/{memory_id}")
+async def update_memory(memory_id: UUID, memory: MemoryUpdate):
+    """Update a memory by ID"""
+    try:
+        logger.debug(f"Received update request for memory_id={memory_id}")
+        logger.debug(f"Update data: {memory.dict(exclude_unset=True)}")
+
+        # Only include fields that were actually provided in the update
+        update_data = memory.dict(exclude_unset=True)
+
+        # Ensure category is properly formatted if provided
+        if 'category' in update_data and isinstance(update_data['category'], str):
+            update_data['category'] = update_data['category'].replace('Category.', '')
+
+        # Convert time_period to ISO format if provided
+        if 'time_period' in update_data and isinstance(update_data['time_period'], datetime):
+            update_data['time_period'] = update_data['time_period'].isoformat()
+
+        result = await MemoryService.update_memory(memory_id, update_data)
+
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail="Memory not found"
+            )
+
+        return result
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error updating memory: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update memory: {str(e)}"
+        )
 
 @router.get("/{profile_id}")
 async def get_memories_by_profile(profile_id: UUID) -> List[Memory]:
@@ -111,4 +152,49 @@ async def delete_memory(memory_id: UUID):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete memory: {str(e)}"
+        )
+
+@router.post("/{memory_id}/media")
+async def add_media_to_memory(
+    memory_id: UUID,
+    files: List[UploadFile] = File(...),
+):
+    """Add media files to a memory"""
+    try:
+        logger.debug(f"Received media upload request for memory_id={memory_id}")
+        logger.debug(f"Number of files: {len(files)}")
+
+        # Read and validate each file
+        file_contents = []
+        content_types = []
+
+        for file in files:
+            content_type = file.content_type
+            if not content_type.startswith('image/'):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {file.filename} is not an image"
+                )
+
+            content = await file.read()
+            file_contents.append(content)
+            content_types.append(content_type)
+
+        # Process the files
+        result = await MemoryService.add_media_to_memory(
+            memory_id=memory_id,
+            files=file_contents,
+            content_types=content_types
+        )
+
+        return result
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error adding media: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to add media: {str(e)}"
         )
