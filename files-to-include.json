@@ -1,0 +1,26 @@
+{
+   "backend_models": [
+      "/models/memory.py",
+      "/models/profile.py"
+   ],
+   "backend_api_endpoints": [
+      "/api/v1/__init__.py",
+      "/api/v1/achievements.py",
+      "/api/v1/interviews.py",
+      "/api/v1/memories.py",
+      "/api/v1/profiles.py"
+   ],
+   "backend_services": [
+      "/services/__init__.py",
+      "/services/achievements.py",
+      "/services/memory.py",
+      "/services/sentiment.py",
+      "/services/profile.py"
+   ],
+   "backend_entrypoint": [
+    "/main.py"
+   ],
+   "storage_layer": [
+    "/storage_layer_scripts.sql"
+   ]
+}

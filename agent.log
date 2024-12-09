@@ -42,3 +42,82 @@
 2024-12-09 11:06:55,920 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
 2024-12-09 11:07:13,331 - INFO - HTTP Request: PATCH https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?id=eq.dd6a6a71-3bcc-45af-b627-60de4e0dd7df "HTTP/2 200 OK"
 2024-12-09 11:07:13,802 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:14:41,904 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions?select=%2A&id=eq.87d5335a-7be0-4777-b068-f9304dc54b68&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:14:42,244 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories "HTTP/2 201 Created"
+2024-12-09 11:14:42,862 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=description&session_id=eq.87d5335a-7be0-4777-b068-f9304dc54b68&order=created_at.desc&limit=3 "HTTP/2 200 OK"
+2024-12-09 11:14:44,389 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:15:00,514 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:15:00,991 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:15:02,353 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:15:02,770 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:15:03,206 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:15:03,730 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:15:04,188 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:15:04,491 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:15:48,519 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=image_urls&id=eq.ca2cd672-a937-4d91-9d75-11cacdb5b515 "HTTP/2 200 OK"
+2024-12-09 11:15:49,621 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/storage/v1/object/memory-media/ca2cd672-a937-4d91-9d75-11cacdb5b515/cbc20277-3a97-4da6-953f-4d1687f8f09d.jpg "HTTP/2 200 OK"
+2024-12-09 11:15:49,979 - INFO - HTTP Request: PATCH https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?id=eq.ca2cd672-a937-4d91-9d75-11cacdb5b515 "HTTP/2 200 OK"
+2024-12-09 11:15:50,250 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:16:31,729 - INFO - HTTP Request: PATCH https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?id=eq.ca2cd672-a937-4d91-9d75-11cacdb5b515 "HTTP/2 200 OK"
+2024-12-09 11:16:31,992 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:16:58,102 - INFO - HTTP Request: PATCH https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?id=eq.ca2cd672-a937-4d91-9d75-11cacdb5b515 "HTTP/2 200 OK"
+2024-12-09 11:16:58,374 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:19:21,057 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:19:22,447 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:19:22,874 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:19:23,063 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:20:36,461 - INFO - HTTP Request: PATCH https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?id=eq.ca2cd672-a937-4d91-9d75-11cacdb5b515 "HTTP/2 200 OK"
+2024-12-09 11:20:36,938 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:20:58,322 - INFO - HTTP Request: PATCH https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?id=eq.ca2cd672-a937-4d91-9d75-11cacdb5b515 "HTTP/2 200 OK"
+2024-12-09 11:20:58,586 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:21:28,678 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:21:29,110 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:21:29,547 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:21:30,068 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:21:38,745 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:21:38,955 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:21:40,418 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:21:40,626 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:21:41,075 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:21:41,580 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:21:41,840 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:21:42,303 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:21:45,124 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:21:45,545 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:21:46,013 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:21:46,498 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 11:21:54,012 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-12-09 11:21:54,416 - INFO - HTTP Request: POST https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/interview_sessions "HTTP/2 201 Created"
+2024-12-09 11:21:54,632 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/profiles?select=%2A&id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2 "HTTP/2 200 OK"
+2024-12-09 11:21:55,134 - INFO - HTTP Request: GET https://tmfbqujnczrpsnyrdmqi.supabase.co/rest/v1/memories?select=%2A&profile_id=eq.4e2cd79f-b789-42d2-bd1d-8fde2d803fa2&order=created_at.desc "HTTP/2 200 OK"
+2024-12-09 12:36:45,738 - INFO - This is an INFO log.
+2024-12-09 12:41:22,357 - INFO - This is an INFO log.
+2024-12-09 12:53:42,230 - INFO - This is an INFO log.
+2024-12-09 12:53:46,305 - INFO - This is an INFO log.
+2024-12-09 12:54:16,060 - INFO - This is an INFO log.
+2024-12-09 12:54:18,133 - INFO - This is an INFO log.
+2024-12-09 12:54:20,536 - INFO - This is an INFO log.
+2024-12-09 12:54:22,821 - INFO - This is an INFO log.
+2024-12-09 12:54:27,530 - INFO - This is an INFO log.
+2024-12-09 12:54:30,566 - INFO - This is an INFO log.
+2024-12-09 12:54:33,974 - INFO - This is an INFO log.
+2024-12-09 12:54:37,288 - INFO - This is an INFO log.
+2024-12-09 12:54:39,671 - INFO - This is an INFO log.
+2024-12-09 12:54:42,594 - INFO - This is an INFO log.
+2024-12-09 12:54:44,280 - INFO - This is an INFO log.
+2024-12-09 12:54:53,078 - INFO - This is an INFO log.
+2024-12-09 12:54:54,945 - INFO - This is an INFO log.
+2024-12-09 12:55:01,218 - INFO - This is an INFO log.
+2024-12-09 12:55:04,713 - INFO - This is an INFO log.
+2024-12-09 12:55:16,899 - INFO - This is an INFO log.
+2024-12-09 12:55:22,487 - INFO - This is an INFO log.
+2024-12-09 12:55:32,467 - INFO - This is an INFO log.
+2024-12-09 12:55:35,522 - INFO - This is an INFO log.
+2024-12-09 12:55:40,533 - INFO - This is an INFO log.
+2024-12-09 12:55:42,044 - INFO - This is an INFO log.
+2024-12-09 12:56:11,155 - INFO - This is an INFO log.
+2024-12-09 12:56:27,622 - INFO - This is an INFO log.
+2024-12-09 13:14:56,054 - INFO - This is an INFO log.
+2024-12-09 13:15:12,764 - INFO - This is an INFO log.
+2024-12-09 13:19:25,384 - INFO - This is an INFO log.
+2024-12-09 13:19:34,842 - INFO - This is an INFO log.
