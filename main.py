@@ -43,7 +43,7 @@ app.add_middleware(
 
 # logging.basicConfig(level=logging.DEBUG)
 # logger = logging.getLogger(__name__)
-
+"""
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     try:
@@ -56,6 +56,7 @@ async def log_requests(request: Request, call_next):
         # Log the error message and stack trace
         logger.error(f"An error occurred while processing the request: {e}", exc_info=True)
         raise  # Re-raise the exception to let FastAPI handle it properly
+"""
 
 # Initialize Supabase client
 supabase = create_client(

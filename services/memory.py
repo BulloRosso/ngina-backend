@@ -190,6 +190,63 @@ class MemoryService:
             raise Exception(f"Failed to create memory: {str(e)}")
 
     @classmethod
+    async def delete_media_from_memory(cls, memory_id: UUID, filename: str) -> bool:
+        """Delete a media file from storage and update the memory record"""
+        try:
+            logger.debug(f"Deleting media {filename} from memory {memory_id}")
+            instance = cls.get_instance()
+
+            # First, get the current memory record to get the image URLs
+            memory = instance.supabase.table(cls.table_name)\
+                .select("image_urls")\
+                .eq("id", str(memory_id))\
+                .execute()
+
+            if not memory.data:
+                raise Exception("Memory not found")
+
+            # Get current image URLs
+            current_urls = memory.data[0].get('image_urls', [])
+
+            # Generate the storage URL that matches our stored URL pattern
+            storage_url = instance.supabase.storage\
+                .from_(cls.storage_bucket)\
+                .get_public_url(f"{memory_id}/{filename}")
+
+            # Find and remove the URL from the list
+            updated_urls = [url for url in current_urls if url != storage_url]
+
+            if len(updated_urls) == len(current_urls):
+                logger.warning(f"URL not found in memory record: {storage_url}")
+
+            # Delete from storage
+            try:
+                delete_result = instance.supabase.storage\
+                    .from_(cls.storage_bucket)\
+                    .remove([f"{memory_id}/{filename}"])
+
+                logger.debug(f"Storage delete result: {delete_result}")
+            except Exception as e:
+                logger.error(f"Error deleting from storage: {str(e)}")
+                # Continue anyway to update the memory record
+                pass
+
+            # Update the memory record with the new URL list
+            update_result = instance.supabase.table(cls.table_name)\
+                .update({"image_urls": updated_urls})\
+                .eq("id", str(memory_id))\
+                .execute()
+
+            logger.debug(f"Memory update result: {update_result}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting media from memory: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Failed to delete media: {str(e)}")
+    
+    @classmethod
     async def add_media_to_memory(cls, memory_id: UUID, files: List[bytes], content_types: List[str]) -> dict:
         """Add media files to a memory and return the URLs"""
         try:

@@ -154,6 +154,26 @@ async def delete_memory(memory_id: UUID):
             detail=f"Failed to delete memory: {str(e)}"
         )
 
+@router.delete("/{memory_id}/media/{filename}")
+async def delete_media_from_memory(memory_id: UUID, filename: str):
+    """Delete a media file from a memory"""
+    try:
+        logger.debug(f"Deleting media {filename} from memory {memory_id}")
+
+        result = await MemoryService.delete_media_from_memory(memory_id, filename)
+
+        return {"success": True, "message": "Media deleted successfully"}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error deleting media: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete media: {str(e)}"
+        )
+        
 @router.post("/{memory_id}/media")
 async def add_media_to_memory(
     memory_id: UUID,
