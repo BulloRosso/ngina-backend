@@ -18,11 +18,8 @@ class EmpatheticInterviewer:
             supabase_key=os.getenv("SUPABASE_KEY")
         )
 
-    async def start_new_session(self, profile_id: UUID) -> Dict[str, Any]:
-        """
-        Start a new interview session for a profile.
-        Returns initial question and session details.
-        """
+    async def start_new_session(self, profile_id: UUID, language: str = "en") -> Dict[str, Any]:
+        """Start a new interview session for a profile."""
         try:
             # Generate an empathetic opening question using OpenAI
             response = self.openai_client.chat.completions.create(
@@ -30,7 +27,9 @@ class EmpatheticInterviewer:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an empathetic interviewer helping people preserve their memories. Generate a warm, inviting opening question that encourages sharing personal memories."
+                        "content": f"""You are an empathetic interviewer helping people preserve their memories. 
+                        Generate a warm, inviting opening question that encourages sharing personal memories.
+                        Respond in {language} language only."""
                     },
                     {
                         "role": "user",
@@ -44,7 +43,7 @@ class EmpatheticInterviewer:
             session_id = uuid4()
             now = datetime.utcnow()
 
-            # Create the session record in Supabase
+            # Create session record...
             session_data = {
                 "id": str(session_id),
                 "profile_id": str(profile_id),
@@ -146,10 +145,10 @@ class EmpatheticInterviewer:
                 "intensity": 0.5
             }
 
-    async def generate_next_question(self, profile_id: UUID, session_id: UUID) -> str:
-        """Generate the next question based on previous responses in the session."""
+    async def generate_next_question(self, profile_id: UUID, session_id: UUID, language: str = "en") -> str:
+        """Generate the next question based on previous responses."""
         try:
-            # Get previous responses from this session
+            # Get previous responses...
             previous_responses = self.supabase.table("memories").select(
                 "description"
             ).eq(
@@ -170,9 +169,10 @@ class EmpatheticInterviewer:
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are an empathetic interviewer helping people preserve their 
+                        "content": f"""You are an empathetic interviewer helping people preserve their 
                         memories. Generate a follow-up question that encourages deeper sharing and 
-                        reflection. Focus on details, emotions, and sensory experiences."""
+                        reflection. Focus on details, emotions, and sensory experiences.
+                        Respond in {language} language only."""
                     },
                     {
                         "role": "user",
@@ -183,8 +183,14 @@ class EmpatheticInterviewer:
             )
 
             next_question = response.choices[0].message.content
-            return next_question or "Can you tell me more about that experience? What details stand out in your memory?"
+            return next_question
 
         except Exception as e:
             logger.error(f"Error generating next question: {str(e)}")
-            return "What other memories would you like to share today?"
+            # Return default messages in the correct language
+            default_messages = {
+                "en": "What other memories would you like to share today?",
+                "de": "Welche anderen Erinnerungen möchten Sie heute teilen?"
+                # Add more languages as needed
+            }
+            return default_messages.get(language, default_messages["en"])

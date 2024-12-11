@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
 @router.post("/{profile_id}/start")
-async def start_interview(profile_id: UUID):
+async def start_interview(profile_id: UUID, language: str = "en"):
     interviewer = EmpatheticInterviewer()
-    return await interviewer.start_new_session(profile_id)
+    return await interviewer.start_new_session(profile_id, language)
 
 @router.post("/{profile_id}/response")
 async def process_response(
@@ -32,16 +32,17 @@ async def process_response(
 @router.get("/{profile_id}/question")
 async def get_next_question(
     profile_id: UUID,
-    session_id: UUID
+    session_id: UUID,
+    language: str = "en"
 ):
     """Get the next interview question based on the session context."""
     try:
         interviewer = EmpatheticInterviewer()
-        result = await interviewer.generate_next_question(profile_id, session_id)
+        result = await interviewer.generate_next_question(profile_id, session_id, language)
         return {
             "text": result,
-            "suggested_topics": [],  # Optional: Could be generated based on previous responses
-            "requires_media": False  # Optional: Could be set based on question context
+            "suggested_topics": [],
+            "requires_media": False
         }
     except Exception as e:
         logger.error(f"Error generating next question: {str(e)}")
