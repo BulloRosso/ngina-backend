@@ -1,10 +1,11 @@
 # api/v1/interviews.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from uuid import UUID
 from services.sentiment import EmpatheticInterviewer
 from models.memory import InterviewResponse, InterviewQuestion
 import logging
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,23 @@ async def start_interview(profile_id: UUID, language: str = "en"):
 async def process_response(
     profile_id: UUID,
     response: InterviewResponse,
-    session_id: UUID
+    session_id: UUID = Query(...)  # Now it comes after the required arguments
 ):
-    interviewer = EmpatheticInterviewer()
-    return await interviewer.process_interview_response(
-        profile_id,
-        session_id,
-        response.text,
-        response.language
-    )
+    """Process a response from the interview."""
+    try:
+        interviewer = EmpatheticInterviewer()
+        return await interviewer.process_interview_response(
+            profile_id=profile_id,
+            session_id=session_id,
+            response_text=response.text,
+            language=response.language
+        )
+    except Exception as e:
+        logger.error(f"Error processing response: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process response: {str(e)}"
+        )
 
 @router.get("/{profile_id}/question")
 async def get_next_question(

@@ -3,6 +3,7 @@ from pydantic import BaseModel, UUID4
 from datetime import datetime
 from typing import List, Optional, Dict
 from enum import Enum
+from uuid import UUID, uuid4
 
 class Category(str, Enum):
     CHILDHOOD = "childhood"
@@ -70,8 +71,9 @@ class Memory(MemoryCreate):
 class InterviewResponse(BaseModel):
     text: str
     language: str
-    audio_url: Optional[str]
-    emotions_detected: Optional[List[Emotion]]
+    audio_url: Optional[str] = None
+    emotions_detected: Optional[List[Emotion]] = None
+    session_id: Optional[UUID] = None  
 
 class InterviewQuestion(BaseModel):
     text: str

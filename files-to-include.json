@@ -15,7 +15,8 @@
       "/services/achievements.py",
       "/services/memory.py",
       "/services/sentiment.py",
-      "/services/profile.py"
+      "/services/profile.py",
+      "/services/knowledgemanagement.py"
    ],
    "backend_entrypoint": [
     "/main.py"

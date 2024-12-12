@@ -12,6 +12,10 @@ sqlalchemy==2.0.25
 alembic==1.13.1
 psycopg2-binary==2.9.9
 
+# Knowledge graph
+neo4j-graphrag==1.2.1
+neo4j-driver==5.27.0
+
 # PDF Generation
 weasyprint==60.2
 jinja2==3.1.3

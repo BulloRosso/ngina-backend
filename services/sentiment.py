@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any
 from supabase import create_client, Client
 import logging
+from services.knowledgemanagement import KnowledgeManagement, MemoryClassification
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class EmpatheticInterviewer:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
+        self.knowledge_manager = KnowledgeManagement()
 
     async def start_new_session(self, profile_id: UUID, language: str = "en") -> Dict[str, Any]:
         """Start a new interview session for a profile."""
@@ -88,22 +90,53 @@ class EmpatheticInterviewer:
         Process a response from the interviewee and generate the next question.
         """
         try:
-            # Analyze sentiment
-            sentiment = await self._analyze_sentiment(response_text)
+            # First, analyze if the response is a memory and classify it
+            classification = await KnowledgeManagement.analyze_response(
+                response_text, 
+                self.openai_client,
+                language
+            )
 
-            # Generate follow-up question based on the response
-            next_question = await self._generate_follow_up_question(response_text, language)
+            logger.info("------- Analyzed response -------")
+            logger.info(f"is_memory={classification.is_memory} "
+                      f"rewritten_text='{classification.rewritten_text}' "
+                      f"category='{classification.category}' "
+                      f"location='{classification.location}' "
+                      f"timestamp='{classification.timestamp}'")
+
+            # If it's a memory, store it
+            if classification.is_memory:
+                await self.knowledge_manager.store_memory(
+                    profile_id,
+                    session_id,
+                    classification
+                )
+                
+            # Analyze sentiment
+            sentiment = await self._analyze_sentiment(
+                classification.rewritten_text if classification.is_memory else response_text
+            )
+
+            # Generate follow-up question based on the processed response
+            next_question = await self.generate_next_question(
+                profile_id, 
+                session_id,
+                language
+            )
 
             return {
                 "sentiment": sentiment,
-                "follow_up": next_question
+                "follow_up": next_question,
+                "is_memory": classification.is_memory
             }
 
         except Exception as e:
             print(f"Error processing interview response: {str(e)}")
             return {
                 "sentiment": {"joy": 0.5, "nostalgia": 0.5},
-                "follow_up": "Can you tell me more about that?"
+                "follow_up": "Can you tell me more about that?",
+                "is_memory": False,
+                "memory_id": memory.id if memory else None
             }
 
     async def _analyze_sentiment(self, text: str) -> Dict[str, float]:
@@ -165,7 +198,7 @@ class EmpatheticInterviewer:
 
             # Generate follow-up question using OpenAI
             response = self.openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
