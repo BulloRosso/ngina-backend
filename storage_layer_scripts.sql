@@ -2,6 +2,32 @@
 create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
+CREATE TABLE public.users (
+    instance_id uuid, 
+    id uuid NOT NULL DEFAULT uuid_generate_v4(), 
+    id uuid NOT NULL, 
+    first_name text NOT NULL, 
+    aud character varying(255), 
+    last_name text NOT NULL, 
+    email text NOT NULL, role character varying(255), 
+    email character varying(255), 
+    password text NOT NULL, 
+    encrypted_password character varying(255), 
+    created_at timestamp with time zone DEFAULT now(), 
+    updated_at timestamp with time zone DEFAULT now(), 
+    email_confirmed_at timestamp with time zone, 
+    invited_at timestamp with time zone, 
+    profile jsonb DEFAULT '{"is_validated_by_email": false}'::jsonb, 
+    confirmation_token character varying(255), 
+    confirmation_sent_at timestamp with time zone, 
+    recovery_token character varying(255), 
+    recovery_sent_at timestamp with time zone, 
+    email_change_token_new character varying(255), 
+    email_change character varying(255), 
+    email_change_sent_at timestamp with time zone, 
+    last_sign_in_at timestamp with time zone, 
+    raw_app_meta_data jsonb, 
+    raw_user_meta_data jsonb, is_super_admin boolean, created_at timestamp with time zone, updated_at timestamp with time zone, phone text DEFAULT NULL::character varying, phone_confirmed_at timestamp with time zone, phone_change text DEFAULT ''::character varying, phone_change_token character varying(255) DEFAULT ''::character varying, phone_change_sent_at timestamp with time zone, confirmed_at timestamp with time zone, email_change_token_current character varying(255) DEFAULT ''::character varying, email_change_confirm_status smallint DEFAULT 0, banned_until timestamp with time zone, reauthentication_token character varying(255) DEFAULT ''::character varying, reauthentication_sent_at timestamp with time zone, is_sso_user boolean NOT NULL DEFAULT false, deleted_at timestamp with time zone, is_anonymous boolean NOT NULL DEFAULT false);
 -- Profiles table
 create table profiles (
     id uuid primary key default uuid_generate_v4(),

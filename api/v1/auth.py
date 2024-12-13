@@ -6,6 +6,9 @@ from config.jwt import create_access_token
 from supabase import create_client
 import os
 import bcrypt
+from services.email import EmailService
+import random
+import string
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -13,7 +16,9 @@ supabase = create_client(
     supabase_url=os.getenv("SUPABASE_URL"),
     supabase_key=os.getenv("SUPABASE_KEY")
 )
-
+def generate_verification_code():
+    return ''.join(random.choices(string.digits, k=8))
+    
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -24,36 +29,43 @@ class SignupRequest(BaseModel):
     email: str
     password: str
 
+class VerificationRequest(BaseModel):
+    code: str
+    user_id: str
+    
+# api/v1/auth.py
 @router.post("/signup")
 async def signup(request: SignupRequest):
     try:
-        # Check if user exists in Supabase
+        # Check if user exists
         result = supabase.table("users").select("*").eq("email", request.email).execute()
-
         if result.data:
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        # Hash password
-        hashed_password = bcrypt.hashpw(
-            request.password.encode('utf-8'),
-            bcrypt.gensalt()
-        ).decode('utf-8')
+        # Generate verification code
+        verification_code = generate_verification_code()
 
-        # Create user in Supabase
+        # Create user with verification code in profile
         user_data = {
             "first_name": request.first_name,
             "last_name": request.last_name,
             "email": request.email,
-            "password": hashed_password
+            "password": bcrypt.hashpw(request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+            "profile": {
+                "signup_secret": verification_code,
+                "is_validated_by_email": False
+            }
         }
 
         result = supabase.table("users").insert(user_data).execute()
         user = result.data[0]
 
+        # Send verification email (synchronously)
+        email_service = EmailService()
+        email_service.send_verification_email(request.email, verification_code)  # Removed await
+
         # Create access token
-        access_token = create_access_token(
-            data={"sub": user["id"], "email": user["email"]}
-        )
+        access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
 
         return {
             "access_token": access_token,
@@ -62,9 +74,66 @@ async def signup(request: SignupRequest):
                 "id": user["id"],
                 "email": user["email"],
                 "first_name": user["first_name"],
-                "last_name": user["last_name"]
+                "last_name": user["last_name"],
+                "is_validated": False
             }
         }
+    except Exception as e:
+        print(f"Signup error: {str(e)}")  # Add debug logging
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/verify-email")
+async def verify_email(verification_data: VerificationRequest):
+    try:
+        # Get user
+        result = supabase.table("users").select("*").eq(
+            "id", verification_data.user_id
+        ).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = result.data[0]
+        profile = user.get("profile", {})
+
+        # Check verification code
+        if profile.get("signup_secret") != verification_data.code:
+            return {"verified": False}
+
+        # Update user profile
+        profile["is_validated_by_email"] = True
+        supabase.table("users").update(
+            {"profile": profile}
+        ).eq("id", verification_data.user_id).execute()
+
+        return {"verified": True}
+    except Exception as e:
+        print(f"Verification error: {str(e)}")  # Add debug logging
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/resend-verification")
+async def resend_verification(user_id: str):
+    try:
+        # Get user
+        result = supabase.table("users").select("*").eq("id", user_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = result.data[0]
+
+        # Generate new verification code
+        verification_code = generate_verification_code()
+
+        # Update user profile
+        profile = user.get("profile", {})
+        profile["signup_secret"] = verification_code
+        supabase.table("users").update({"profile": profile}).eq("id", user_id).execute()
+
+        # Send new verification email
+        email_service = EmailService()
+        await email_service.send_verification_email(user["email"], verification_code)
+
+        return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
