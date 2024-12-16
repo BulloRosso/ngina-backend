@@ -74,6 +74,8 @@ class KnowledgeManagement:
             if classification.timestamp in ["unbekannt", "unknown", ""]:
                 classification.timestamp = datetime.now().strftime("%Y-%m-%d")
 
+            classification.timestamp = classification.timestamp.replace("-XX", "-01")
+            
             logger.info(f"Memory classification complete: {classification}")
             return classification
 
