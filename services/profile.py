@@ -162,10 +162,15 @@ class ProfileService:
                         category_str = memory_data.get('category', 'childhood').upper()
                         category = getattr(Category, category_str, Category.CHILDHOOD)
 
+                        logger.info("------------------- parsed memory -----------")
+                        logger.info(category)
+                        logger.info(memory_data.get('description'))
+                        logger.info(memory_data.get('date'))
+                        
                         memory = MemoryCreate(
                             category=category,
                             description=memory_data['description'],
-                            time_period=datetime.fromisoformat(memory_data.get('date', datetime.now().isoformat())),
+                            time_period=memory_data.get('date'),
                             location=Location(**memory_data['location']) if memory_data.get('location') else None
                         )
 

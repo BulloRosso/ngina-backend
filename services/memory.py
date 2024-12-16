@@ -140,7 +140,7 @@ class MemoryService:
                     "session_id": str(session_id),
                     "category": str(memory.category),
                     "description": str(memory.description),
-                    "time_period": datetime.now().isoformat(),  # Use current time if time_period is causing issues
+                    "time_period": str(memory.time_period),
                     "emotions": [],  # Start with empty arrays if these are causing issues
                     "people": [],
                     "image_urls": [],
