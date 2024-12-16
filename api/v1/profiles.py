@@ -1,5 +1,5 @@
 # api/v1/profiles.py
-from fastapi import APIRouter, HTTPException, File, Form, Request, UploadFile
+from fastapi import APIRouter, HTTPException, File, Form, Query, UploadFile
 from typing import Optional
 from uuid import UUID
 import json
@@ -40,7 +40,8 @@ async def list_profiles() -> List[Profile]:
 @router.post("")
 async def create_profile(
     profile_image: UploadFile = File(...),
-    profile: str = Form(...)
+    profile: str = Form(...),
+    language: str = Form("en")  # Add language parameter with default "en"
 ):
     try:
         profile_data = json.loads(profile)
@@ -89,7 +90,7 @@ async def create_profile(
             # Upload new file with raw bytes
             result = supabase.storage.from_("profile-images").upload(
                 path=file_path,
-                file=file_content,  # Use raw bytes
+                file=file_content,
                 file_options={
                     "content-type": profile_image.content_type
                 }
@@ -103,9 +104,9 @@ async def create_profile(
 
             logger.debug(f"Successfully uploaded image, URL: {image_url}")
 
-            # Create profile using service
+            # Create profile using service with language parameter
             profile_create = ProfileCreate(**profile_data)
-            return await ProfileService.create_profile(profile_create)
+            return await ProfileService.create_profile(profile_create, language=language)
 
         except Exception as e:
             logger.error(f"Storage error: {str(e)}")
