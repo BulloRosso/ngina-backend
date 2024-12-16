@@ -1,7 +1,7 @@
 # models/profile.py
 from pydantic import BaseModel, UUID4, EmailStr
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class ProfileCreate(BaseModel):
     first_name: str
@@ -12,6 +12,7 @@ class ProfileCreate(BaseModel):
     children: List[str] = []
     spoken_languages: List[str] = []
     profile_image_url: Optional[str]
+    metadata: Optional[Dict[str, Any]] = {}
 
 class Profile(ProfileCreate):
     id: UUID4

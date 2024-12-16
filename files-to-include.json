@@ -8,7 +8,8 @@
       "/api/v1/achievements.py",
       "/api/v1/interviews.py",
       "/api/v1/memories.py",
-      "/api/v1/profiles.py"
+      "/api/v1/profiles.py",
+      "/api/v1/auth.py"
    ],
    "backend_services": [
       "/services/__init__.py",
@@ -16,7 +17,10 @@
       "/services/memory.py",
       "/services/sentiment.py",
       "/services/profile.py",
-      "/services/knowledgemanagement.py"
+      "/services/knowledgemanagement.py",
+      "/services/email.py",
+      "/services/profile.py",
+      "/dependencies/auth.py" 
    ],
    "backend_entrypoint": [
     "/main.py"

@@ -1,10 +1,15 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, UUID4
 from supabase import create_client, Client
 import os
 import logging
+import json
 from models.profile import Profile, ProfileCreate
+from models.memory import MemoryCreate, Category, Memory, Location
+from services.memory import MemoryService
+import openai
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +22,9 @@ class ProfileService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
-        self.table_name = "profiles"
+        self.openai_client = openai.Client(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
 
     @classmethod
     async def get_all_profiles(cls) -> List[Profile]:
@@ -58,14 +65,138 @@ class ProfileService:
         except Exception as e:
             logger.error(f"Error fetching all profiles: {str(e)}")
             raise
-    
-    @staticmethod
-    async def create_profile(profile_data: ProfileCreate) -> Profile:
-        """
-        Creates a new profile in the Supabase table.
-        """
+
+    async def parse_backstory(self, profile_id: UUID, backstory: str, profile_data: Dict[str, Any]) -> None:
+        """Parse memories from backstory and create initial memories"""
         try:
-            # Convert profile data to dict
+            logger.info(f"Parsing backstory for profile {profile_id}")
+
+            # First create an interview session
+            session_data = {
+                "id": str(uuid4()),
+                "profile_id": str(profile_id),
+                "category": "initial",
+                "started_at": datetime.utcnow().isoformat(),
+                "emotional_state": {"initial": "neutral"},
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            # Create session
+            try:
+                session_result = self.supabase.table("interview_sessions").insert(session_data).execute()
+                if not session_result.data:
+                    raise Exception("Failed to create interview session")
+                session_id = session_result.data[0]['id']
+                logger.info(f"Created interview session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create interview session: {str(e)}")
+                raise
+
+            # Create birth memory
+            try:
+                city = profile_data['place_of_birth'].split(',')[0].strip()
+                country = profile_data['place_of_birth'].split(',')[-1].strip()
+
+                birth_memory = MemoryCreate(
+                    category=Category.CHILDHOOD,
+                    description=f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}",
+                    time_period=datetime.strptime(profile_data['date_of_birth'], "%Y-%m-%d"),
+                    location=Location(
+                        name=profile_data['place_of_birth'],
+                        city=city,
+                        country=country,
+                        description="Place of birth"
+                    )
+                )
+
+                await MemoryService.create_memory(birth_memory, profile_id, session_id)
+                logger.info("Birth memory created successfully")
+
+            except Exception as e:
+                logger.error(f"Error creating birth memory: {str(e)}")
+
+            # Parse backstory for additional memories
+            try:
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """Extract distinct memories from the backstory and format them as a JSON object.
+                            The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
+                            For each memory in the "memories" array, provide:
+                            {
+                                "description": "Full description of the memory",
+                                "category": "One of: childhood/career/relationships/travel/hobbies/pets",
+                                "date": "YYYY-MM-DD (approximate if not specified)",
+                                "location": {
+                                    "name": "Location name",
+                                    "city": "City if mentioned",
+                                    "country": "Country if mentioned",
+                                    "description": "Brief description of the location"
+                                }
+                            }"""
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Please analyze this text and return the memories as JSON: {backstory}"
+                        }
+                    ],
+                    response_format={ "type": "json_object" }
+                )
+
+                # Parse the JSON response
+                try:
+                    parsed_memories = json.loads(response.choices[0].message.content)
+                    logger.info(f"Parsed memories: {parsed_memories}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {str(e)}")
+                    logger.error(f"Raw response: {response.choices[0].message.content}")
+                    raise Exception("Failed to parse OpenAI response")
+
+                # Create memories from parsed content
+                for memory_data in parsed_memories.get('memories', []):
+                    try:
+                        # Convert the category string to enum
+                        category_str = memory_data.get('category', 'childhood').upper()
+                        category = getattr(Category, category_str, Category.CHILDHOOD)
+
+                        memory = MemoryCreate(
+                            category=category,
+                            description=memory_data['description'],
+                            time_period=datetime.fromisoformat(memory_data.get('date', datetime.now().isoformat())),
+                            location=Location(**memory_data['location']) if memory_data.get('location') else None
+                        )
+
+                        await MemoryService.create_memory(memory, profile_id, session_id)
+                        logger.debug(f"Created memory: {memory.description}")
+
+                    except Exception as e:
+                        logger.error(f"Error creating individual memory: {str(e)}")
+                        continue
+
+            except Exception as e:
+                logger.error(f"Error parsing memories from backstory: {str(e)}")
+                raise
+
+        except Exception as e:
+            logger.error(f"Error in parse_backstory: {str(e)}")
+            raise Exception(f"Failed to parse backstory: {str(e)}")
+    
+    @classmethod
+    async def create_profile(cls, profile_data: ProfileCreate) -> Profile:
+        """Creates a new profile and initializes memories from backstory"""
+        try:
+            service = cls()  # Create instance
+
+            # Extract backstory from metadata if present
+            backstory = None
+            metadata = profile_data.metadata if hasattr(profile_data, 'metadata') else {}
+            if isinstance(metadata, dict):
+                backstory = metadata.get('backstory')
+
+            # Prepare profile data for database
             data = {
                 "first_name": profile_data.first_name,
                 "last_name": profile_data.last_name,
@@ -74,21 +205,33 @@ class ProfileService:
                 "gender": profile_data.gender,
                 "children": profile_data.children,
                 "spoken_languages": profile_data.spoken_languages,
-                "profile_image_url": profile_data.profile_image_url
+                "profile_image_url": profile_data.profile_image_url,
+                "metadata": metadata,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
             }
 
-            # Insert data into Supabase
-            response = supabase.table(ProfileService.table_name).insert(data).execute()
-          
-            if hasattr(response, 'error') and response.error:
-                raise Exception(f"Supabase error: {response.error}")
+            # Insert profile into database
+            result = service.supabase.table(service.table_name).insert(data).execute()
 
-            result_data = response.data[0] if response.data else None
-            if not result_data:
-                raise Exception("No data returned from Supabase")
+            if not result.data:
+                raise Exception("No data returned from profile creation")
 
-            return Profile(**result_data)
+            profile_id = result.data[0]['id']
+            created_profile = Profile(**result.data[0])
+
+            # Parse backstory and create initial memories if backstory exists
+            if backstory:
+                await service.parse_backstory(
+                    profile_id=profile_id,
+                    backstory=backstory,
+                    profile_data=data
+                )
+
+            return created_profile
+
         except Exception as e:
+            logger.error(f"Error creating profile: {str(e)}")
             raise Exception(f"Failed to create profile: {str(e)}")
 
     async def get_profile(self, profile_id: UUID4) -> Optional[Profile]:

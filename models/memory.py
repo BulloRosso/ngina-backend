@@ -48,7 +48,7 @@ class MemoryCreate(BaseModel):
     people: List[Person] = []
     emotions: List[Emotion] = []
     image_urls: List[str] = []
-    audio_url: Optional[str]
+    audio_url: Optional[str] = None
 
 class MemoryUpdate(BaseModel):
     category: Optional[str] = None

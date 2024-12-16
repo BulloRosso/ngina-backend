@@ -13,6 +13,7 @@ from services.profile import ProfileService
 from io import BytesIO
 from typing import List
 from models.profile import Profile
+from io import BytesIO
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,47 +39,91 @@ async def list_profiles() -> List[Profile]:
             
 @router.post("")
 async def create_profile(
-  profile_image: UploadFile = File(...),
-  profile: str = Form(...)
+    profile_image: UploadFile = File(...),
+    profile: str = Form(...)
 ):
-  try:
-      profile_data = json.loads(profile)
-      # print("Profile data before creation:", profile_data)  # Debug print
-      first_name = profile_data.get("first_name")
-      last_name = profile_data.get("last_name")
-      profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
+    try:
+        profile_data = json.loads(profile)
+        first_name = profile_data.get("first_name")
+        last_name = profile_data.get("last_name")
+        profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
 
-      if not first_name or not last_name:
-          raise ValueError("Both first_name and last_name are required.")
+        if not first_name or not last_name:
+            raise ValueError("Both first_name and last_name are required.")
 
-      file_path = f"profile_images/{first_name}_{last_name}.jpg"
-      file_content = await profile_image.read()
-      
-      try:
-          supabase.storage.from_("profile-images").remove([file_path])
-      except:
-          pass
+        # Sanitize filename - handle non-ASCII characters
+        def sanitize_filename(s: str) -> str:
+            # Replace umlauts and special characters
+            replacements = {
+                'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+                'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
+                'é': 'e', 'è': 'e', 'ê': 'e',
+                'á': 'a', 'à': 'a', 'â': 'a',
+                'ó': 'o', 'ò': 'o', 'ô': 'o',
+                'í': 'i', 'ì': 'i', 'î': 'i',
+                'ú': 'u', 'ù': 'u', 'û': 'u'
+            }
 
-      result = supabase.storage.from_("profile-images").upload(
-          path=file_path,
-          file=file_content,
-          file_options={"content-type": profile_image.content_type}
-      )
+            for german, english in replacements.items():
+                s = s.replace(german, english)
 
-      image_url = supabase.storage.from_("profile-images").get_public_url(file_path)
-      profile_data["profile_image_url"] = image_url
+            # Keep only ASCII chars, numbers, and safe special chars
+            return "".join(c for c in s if c.isascii() and (c.isalnum() or c in "_-"))
 
-      profile_create = ProfileCreate(**profile_data)
-      return await ProfileService.create_profile(profile_create)
+        safe_first_name = sanitize_filename(first_name)
+        safe_last_name = sanitize_filename(last_name)
+        file_extension = profile_image.filename.split(".")[-1].lower()
+        file_path = f"{safe_first_name}_{safe_last_name}.{file_extension}"
 
-  except Exception as e:
-      tb = traceback.extract_tb(e.__traceback__)[-1]
-      error_info = f"Error in {tb.filename}, line {tb.lineno}: {str(e)}"
-      print(f"Validation error: {error_info}")
-      raise HTTPException(
-          status_code=500, 
-          detail=f"Error processing profile: {error_info}"
-      )
+        # Read file content as bytes
+        file_content = await profile_image.read()
+
+        try:
+            # Remove existing file if it exists
+            try:
+                supabase.storage.from_("profile-images").remove([file_path])
+                logger.debug(f"Removed existing file: {file_path}")
+            except Exception as e:
+                logger.debug(f"No existing file to remove or removal failed: {str(e)}")
+
+            # Upload new file with raw bytes
+            result = supabase.storage.from_("profile-images").upload(
+                path=file_path,
+                file=file_content,  # Use raw bytes
+                file_options={
+                    "content-type": profile_image.content_type
+                }
+            )
+
+            logger.debug(f"Upload result: {result}")
+
+            # Get public URL
+            image_url = supabase.storage.from_("profile-images").get_public_url(file_path)
+            profile_data["profile_image_url"] = image_url
+
+            logger.debug(f"Successfully uploaded image, URL: {image_url}")
+
+            # Create profile using service
+            profile_create = ProfileCreate(**profile_data)
+            return await ProfileService.create_profile(profile_create)
+
+        except Exception as e:
+            logger.error(f"Storage error: {str(e)}")
+            logger.error(f"Error details: {traceback.format_exc()}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error processing profile image: {str(e)}"
+            )
+
+    except Exception as e:
+        tb = traceback.extract_tb(e.__traceback__)[-1]
+        error_info = f"Error in {tb.filename}, line {tb.lineno}: {str(e)}"
+        logger.error(f"Validation error: {error_info}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing profile: {error_info}"
+        )
 
 @router.get("/{profile_id}")
 async def get_profile(profile_id: UUID):
