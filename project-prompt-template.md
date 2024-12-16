@@ -4,6 +4,68 @@ Noblivion is a AI system which helps you capturing your personal or professional
 ## How to get Noblivion?
 Noblivion is a gift from children to their parents and the process starts when a person enters the personal data of another person (called the client from here) as profile in the Noblivion React frontend. This profile contains personal information and will help the AI interviewer to get started and to focus on the most relevant facets of the client.
 
+## Registration process
+### 1. User creation
+To create a profile you need to sign up/register with the noblivion system. 
+A registered user can be found in the supabase table "users":
+* a registered user has an unique "id" property of type UUID
+* a registered user has a email which is used for notification mails
+* a registered user has a profile property of the type JSONB
+The profile property looks like this:
+```
+{
+  "signup_secret": "03212476",
+  "is_validated_by_email": true,
+  "profiles": [
+      { "id": "9aa460e7-9c5d-40c7-ad51-b67d0130336e", "isDefault": true }
+  ]
+}
+```
+One registered user can have more than one profiles. 
+
+### 2. Profile creation
+A registed user can create one or more profiles. Each profile is written to the profile property of the 
+supabase table "users".
+The profiles are stored in the supabase table "profiles".
+Each profile has at least these fields/properties:
+* a profile has a unique "id" property of type UUID
+* a profile has a date of birth in ISO format (without time)
+* a profile has a geneder property like "male"
+* a profile has profile_image_url which is a full URL pointing to an avatar image on a public webserver
+* a profile has a metadata property of the type JSONB
+
+The metadata property looks like this:
+```
+{
+  "backstory": "<about the life of the person>"
+}
+```
+Each profile accumulates memories by having interview sessions between the empathetic interviewer AI and the user.
+
+### 3. Interview sessions for a profile
+Each interview is started to aquire memories from the user.
+A interview is stored in the supabase table "interview_sessions".
+Each interview has at least these fields/properties:
+* a interview has a unique "id" property of type UUID
+* a assigned profile (Foreign key) via the field name profile_id
+* a started_at timestamp (timestamptz)
+* a summary (text)
+Each night an AI agent fills the summary of the interviews which are older than 6 hours by analyzing the
+memories of this sessions.
+
+### 4. Memories collected during an interview session
+Each memory belongs to a session and is stored in the supabase table "memories". 
+Each memory has at least these fields/properties:
+* a memory has a unique "id" property of type UUID
+* an assigned profile (Foreign key) via the field name profile_id
+* an assigned session (Foreign key) via the field name session_id
+* a category (text) which is travel | childhood | relationships | pets | hobbies | career
+* a description (text) which contains the core information
+* a time_period (date) which marks the start of the memory
+* a location (jsonb) with the properties "city", "name", "county" and "description"
+* a image_urls (text[]) which contains the full URLs of images of the memory. A memory can contain 0 or more images
+* 
+
 ## Process of the interviews
 An interview can only start if a profileID (UUIDv4) is selected in the frontend. Then we change to the memory collection process:
 * first initiate a new sessionID 
