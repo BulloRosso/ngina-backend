@@ -146,3 +146,24 @@ async def get_profile(profile_id: UUID):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.delete("/{profile_id}")
+async def delete_profile(profile_id: UUID):
+    """Delete a profile and all associated data"""
+    try:
+        logger.debug(f"Deleting profile with ID: {profile_id}")
+        service = ProfileService()
+
+        # Delete profile and all associated data
+        success = await service.delete_profile(profile_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        return {"message": "Profile and all associated data deleted successfully"}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error deleting profile: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))

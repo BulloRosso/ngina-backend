@@ -31,7 +31,7 @@ class ProfileService:
         try:
             logger.info(f"Parsing backstory for profile {profile_id} in language {language}")
 
-            # First create an interview session
+            # Create single session for all initial memories
             session_data = {
                 "id": str(uuid4()),
                 "profile_id": str(profile_id),
@@ -53,12 +53,13 @@ class ProfileService:
                 logger.error(f"Failed to create interview session: {str(e)}")
                 raise
 
-            # Create birth memory in specified language
+            # Use the same session_id for all memories
+
+            # Create birth memory
             try:
                 city = profile_data['place_of_birth'].split(',')[0].strip()
                 country = profile_data['place_of_birth'].split(',')[-1].strip()
 
-                # Create birth description based on language
                 birth_description = {
                     "de": f"{profile_data['first_name']} {profile_data['last_name']} wurde in {profile_data['place_of_birth']} geboren",
                     "en": f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}"
@@ -82,7 +83,7 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
-            # Parse backstory for additional memories
+            # Parse and create additional memories using the SAME session_id
             try:
                 response = self.openai_client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -113,7 +114,6 @@ class ProfileService:
                     response_format={ "type": "json_object" }
                 )
 
-                # Parse the JSON response
                 try:
                     parsed_memories = json.loads(response.choices[0].message.content)
                     logger.info(f"Parsed memories: {parsed_memories}")
@@ -122,10 +122,9 @@ class ProfileService:
                     logger.error(f"Raw response: {response.choices[0].message.content}")
                     raise Exception("Failed to parse OpenAI response")
 
-                # Create memories from parsed content
+                # Create all memories using the same session_id
                 for memory_data in parsed_memories.get('memories', []):
                     try:
-                        # Convert the category string to enum
                         category_str = memory_data.get('category', 'childhood').upper()
                         category = getattr(Category, category_str, Category.CHILDHOOD)
 
@@ -141,6 +140,7 @@ class ProfileService:
                             location=Location(**memory_data['location']) if memory_data.get('location') else None
                         )
 
+                        # Use the same session_id for all memories
                         await MemoryService.create_memory(memory, profile_id, session_id)
                         logger.debug(f"Created memory: {memory.description}")
 
@@ -161,10 +161,19 @@ class ProfileService:
         """Get all profiles"""
         try:
             service = cls()
-            result = service.supabase.table(service.table_name).select("*").order(
-                'updated_at', desc=True
-            ).execute()
+            
+            # Direct SQL query to get profiles with their session counts
+            query = """
+                SELECT p.*,
+                       (SELECT COUNT(*) 
+                        FROM interview_sessions 
+                        WHERE profile_id = p.id) as session_count
+                FROM profiles p
+                ORDER BY p.updated_at DESC
+            """
 
+            result = service.supabase.table('profiles').select("*").execute()
+            
             profiles = []
             for profile_data in result.data:
                 try:
@@ -183,7 +192,19 @@ class ProfileService:
                         profile_data['updated_at'] = datetime.fromisoformat(
                             profile_data['updated_at']
                         )
+                    
+                    # Initialize metadata if it doesn't exist
+                    if not profile_data.get('metadata'):
+                        profile_data['metadata'] = {}
 
+                    # Add session count to metadata
+                    session_count_result = service.supabase.table('interview_sessions')\
+                        .select('id', count='exact')\
+                        .eq('profile_id', profile_data['id'])\
+                        .execute()
+
+                    profile_data['metadata']['session_count'] = session_count_result.count
+                    
                     profiles.append(Profile(**profile_data))
                 except Exception as e:
                     logger.error(f"Error converting profile data: {str(e)}")
@@ -311,17 +332,39 @@ class ProfileService:
     @staticmethod
     async def delete_profile(profile_id: UUID4) -> bool:
         """
-        Deletes a profile by ID.
+        Deletes a profile and all associated data by ID.
         """
         try:
-            # Delete the profile from Supabase
-            response = supabase.table(ProfileService.table_name).delete().eq("id", str(profile_id)).execute()
+            service = ProfileService()
 
-            # Check for errors
-            if response.get("error"):
-                raise Exception(f"Supabase error: {response['error']['message']}")
+            # First get the profile to check if it exists and get image URL
+            result = service.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
 
-            # Return True if deletion was successful
-            return response["data"] is not None
+            if not result.data:
+                return False
+
+            profile = result.data[0]
+
+            # Delete profile image from storage if it exists
+            if profile.get('profile_image_url'):
+                try:
+                    # Extract filename from URL
+                    filename = profile['profile_image_url'].split('/')[-1]
+                    service.supabase.storage.from_("profile-images").remove([filename])
+                    logger.debug(f"Deleted profile image: {filename}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete profile image: {str(e)}")
+
+            # Delete all related data
+            # Note: Due to cascade delete in Supabase, we only need to delete the profile
+            result = service.supabase.table("profiles").delete().eq("id", str(profile_id)).execute()
+
+            if result.data:
+                logger.info(f"Successfully deleted profile {profile_id} and all associated data")
+                return True
+
+            return False
+
         except Exception as e:
+            logger.error(f"Failed to delete profile {profile_id}: {str(e)}")
             raise Exception(f"Failed to delete profile: {str(e)}")
