@@ -82,6 +82,34 @@ async def signup(request: SignupRequest):
         print(f"Signup error: {str(e)}")  # Add debug logging
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/validation-status/{user_id}")
+async def check_validation_status(user_id: str):
+    """Check if a user's email is validated"""
+    try:
+        # Query user from Supabase
+        result = supabase.table("users").select("profile").eq("id", user_id).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = result.data[0]
+        profile = user.get("profile", {})
+
+        # Check validation status from profile JSONB
+        is_validated = profile.get("is_validated_by_email", False)
+
+        return {
+            "is_validated": is_validated,
+            "user_id": user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking validation status: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to check validation status: {str(e)}"
+        )
+        
 @router.post("/verify-email")
 async def verify_email(verification_data: VerificationRequest):
     try:

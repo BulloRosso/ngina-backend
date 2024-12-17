@@ -316,6 +316,13 @@ After the backend received an answer it follows these steps in sequence:
 ### Frontend: React, vite, mui v6 and Typescript
 The frontend uses plaing mui v6 styling and is intended to used by non-trained users. Handling instructions and step-by-step guidance should always be provided.
 
+#### Local storage for state management
+In the localStorage we have the following items:
+* i18nextLng: The current selected locale (Example "de")
+* token: the OAuth token received from the backend for the current user
+* user: a JSON object of the current user. Example: {"id":"e7f8856b-165a-4bf8-b3ae-551fb58472b9","email":"ralph.goellner@e-ntegration.de","first_name":"Ralph","last_name":"Göllner","is_validated":false}
+* profileId: the id of the current selected profile Example: "8f43b7d5-31d2-4f32-b956-195a83bef907"
+
 #### App (entry point)
 The app looks like this:
 -------------------

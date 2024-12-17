@@ -4,6 +4,68 @@ Noblivion is a AI system which helps you capturing your personal or professional
 ## How to get Noblivion?
 Noblivion is a gift from children to their parents and the process starts when a person enters the personal data of another person (called the client from here) as profile in the Noblivion React frontend. This profile contains personal information and will help the AI interviewer to get started and to focus on the most relevant facets of the client.
 
+## Registration process
+### 1. User creation
+To create a profile you need to sign up/register with the noblivion system. 
+A registered user can be found in the supabase table "users":
+* a registered user has an unique "id" property of type UUID
+* a registered user has a email which is used for notification mails
+* a registered user has a profile property of the type JSONB
+The profile property looks like this:
+```
+{
+  "signup_secret": "03212476",
+  "is_validated_by_email": true,
+  "profiles": [
+      { "id": "9aa460e7-9c5d-40c7-ad51-b67d0130336e", "isDefault": true }
+  ]
+}
+```
+One registered user can have more than one profiles. 
+
+### 2. Profile creation
+A registed user can create one or more profiles. Each profile is written to the profile property of the 
+supabase table "users".
+The profiles are stored in the supabase table "profiles".
+Each profile has at least these fields/properties:
+* a profile has a unique "id" property of type UUID
+* a profile has a date of birth in ISO format (without time)
+* a profile has a geneder property like "male"
+* a profile has profile_image_url which is a full URL pointing to an avatar image on a public webserver
+* a profile has a metadata property of the type JSONB
+
+The metadata property looks like this:
+```
+{
+  "backstory": "<about the life of the person>"
+}
+```
+Each profile accumulates memories by having interview sessions between the empathetic interviewer AI and the user.
+
+### 3. Interview sessions for a profile
+Each interview is started to aquire memories from the user.
+A interview is stored in the supabase table "interview_sessions".
+Each interview has at least these fields/properties:
+* a interview has a unique "id" property of type UUID
+* a assigned profile (Foreign key) via the field name profile_id
+* a started_at timestamp (timestamptz)
+* a summary (text)
+Each night an AI agent fills the summary of the interviews which are older than 6 hours by analyzing the
+memories of this sessions.
+
+### 4. Memories collected during an interview session
+Each memory belongs to a session and is stored in the supabase table "memories". 
+Each memory has at least these fields/properties:
+* a memory has a unique "id" property of type UUID
+* an assigned profile (Foreign key) via the field name profile_id
+* an assigned session (Foreign key) via the field name session_id
+* a category (text) which is travel | childhood | relationships | pets | hobbies | career
+* a description (text) which contains the core information
+* a time_period (date) which marks the start of the memory
+* a location (jsonb) with the properties "city", "name", "county" and "description"
+* a image_urls (text[]) which contains the full URLs of images of the memory. A memory can contain 0 or more images
+* 
+
 ## Process of the interviews
 An interview can only start if a profileID (UUIDv4) is selected in the frontend. Then we change to the memory collection process:
 * first initiate a new sessionID 
@@ -354,7 +416,7 @@ class MemoryCreate(BaseModel):
     people: List[Person] = []
     emotions: List[Emotion] = []
     image_urls: List[str] = []
-    audio_url: Optional[str]
+    audio_url: Optional[str] = None
 
 class MemoryUpdate(BaseModel):
     category: Optional[str] = None
@@ -393,7 +455,7 @@ class InterviewQuestion(BaseModel):
 # models/profile.py
 from pydantic import BaseModel, UUID4, EmailStr
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class ProfileCreate(BaseModel):
     first_name: str
@@ -404,6 +466,7 @@ class ProfileCreate(BaseModel):
     children: List[str] = []
     spoken_languages: List[str] = []
     profile_image_url: Optional[str]
+    metadata: Optional[Dict[str, Any]] = {}
 
 class Profile(ProfileCreate):
     id: UUID4
@@ -446,12 +509,14 @@ from .interviews import router as interviews_router
 from .memories import router as memories_router
 from .achievements import router as achievements_router
 from .profiles import router as profiles_router
+from .auth  import router as auth_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(interviews_router)
 router.include_router(memories_router)
 router.include_router(achievements_router)
 router.include_router(profiles_router)
+router.include_router(auth_router)
 ```
 
 ### api/v1/achievements.py
@@ -767,7 +832,7 @@ async def add_media_to_memory(
 ### api/v1/profiles.py
 ```
 # api/v1/profiles.py
-from fastapi import APIRouter, HTTPException, File, Form, Request, UploadFile
+from fastapi import APIRouter, HTTPException, File, Form, Query, UploadFile
 from typing import Optional
 from uuid import UUID
 import json
@@ -781,6 +846,7 @@ from services.profile import ProfileService
 from io import BytesIO
 from typing import List
 from models.profile import Profile
+from io import BytesIO
 import logging
 
 logger = logging.getLogger(__name__)
@@ -806,47 +872,92 @@ async def list_profiles() -> List[Profile]:
             
 @router.post("")
 async def create_profile(
-  profile_image: UploadFile = File(...),
-  profile: str = Form(...)
+    profile_image: UploadFile = File(...),
+    profile: str = Form(...),
+    language: str = Form("en")  # Add language parameter with default "en"
 ):
-  try:
-      profile_data = json.loads(profile)
-      # print("Profile data before creation:", profile_data)  # Debug print
-      first_name = profile_data.get("first_name")
-      last_name = profile_data.get("last_name")
-      profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
+    try:
+        profile_data = json.loads(profile)
+        first_name = profile_data.get("first_name")
+        last_name = profile_data.get("last_name")
+        profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
 
-      if not first_name or not last_name:
-          raise ValueError("Both first_name and last_name are required.")
+        if not first_name or not last_name:
+            raise ValueError("Both first_name and last_name are required.")
 
-      file_path = f"profile_images/{first_name}_{last_name}.jpg"
-      file_content = await profile_image.read()
-      
-      try:
-          supabase.storage.from_("profile-images").remove([file_path])
-      except:
-          pass
+        # Sanitize filename - handle non-ASCII characters
+        def sanitize_filename(s: str) -> str:
+            # Replace umlauts and special characters
+            replacements = {
+                'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+                'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue',
+                'é': 'e', 'è': 'e', 'ê': 'e',
+                'á': 'a', 'à': 'a', 'â': 'a',
+                'ó': 'o', 'ò': 'o', 'ô': 'o',
+                'í': 'i', 'ì': 'i', 'î': 'i',
+                'ú': 'u', 'ù': 'u', 'û': 'u'
+            }
 
-      result = supabase.storage.from_("profile-images").upload(
-          path=file_path,
-          file=file_content,
-          file_options={"content-type": profile_image.content_type}
-      )
+            for german, english in replacements.items():
+                s = s.replace(german, english)
 
-      image_url = supabase.storage.from_("profile-images").get_public_url(file_path)
-      profile_data["profile_image_url"] = image_url
+            # Keep only ASCII chars, numbers, and safe special chars
+            return "".join(c for c in s if c.isascii() and (c.isalnum() or c in "_-"))
 
-      profile_create = ProfileCreate(**profile_data)
-      return await ProfileService.create_profile(profile_create)
+        safe_first_name = sanitize_filename(first_name)
+        safe_last_name = sanitize_filename(last_name)
+        file_extension = profile_image.filename.split(".")[-1].lower()
+        file_path = f"{safe_first_name}_{safe_last_name}.{file_extension}"
 
-  except Exception as e:
-      tb = traceback.extract_tb(e.__traceback__)[-1]
-      error_info = f"Error in {tb.filename}, line {tb.lineno}: {str(e)}"
-      print(f"Validation error: {error_info}")
-      raise HTTPException(
-          status_code=500, 
-          detail=f"Error processing profile: {error_info}"
-      )
+        # Read file content as bytes
+        file_content = await profile_image.read()
+
+        try:
+            # Remove existing file if it exists
+            try:
+                supabase.storage.from_("profile-images").remove([file_path])
+                logger.debug(f"Removed existing file: {file_path}")
+            except Exception as e:
+                logger.debug(f"No existing file to remove or removal failed: {str(e)}")
+
+            # Upload new file with raw bytes
+            result = supabase.storage.from_("profile-images").upload(
+                path=file_path,
+                file=file_content,
+                file_options={
+                    "content-type": profile_image.content_type
+                }
+            )
+
+            logger.debug(f"Upload result: {result}")
+
+            # Get public URL
+            image_url = supabase.storage.from_("profile-images").get_public_url(file_path)
+            profile_data["profile_image_url"] = image_url
+
+            logger.debug(f"Successfully uploaded image, URL: {image_url}")
+
+            # Create profile using service with language parameter
+            profile_create = ProfileCreate(**profile_data)
+            return await ProfileService.create_profile(profile_create, language=language)
+
+        except Exception as e:
+            logger.error(f"Storage error: {str(e)}")
+            logger.error(f"Error details: {traceback.format_exc()}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error processing profile image: {str(e)}"
+            )
+
+    except Exception as e:
+        tb = traceback.extract_tb(e.__traceback__)[-1]
+        error_info = f"Error in {tb.filename}, line {tb.lineno}: {str(e)}"
+        logger.error(f"Validation error: {error_info}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing profile: {error_info}"
+        )
 
 @router.get("/{profile_id}")
 async def get_profile(profile_id: UUID):
@@ -867,6 +978,223 @@ async def get_profile(profile_id: UUID):
         logger.error(f"Error fetching profile: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{profile_id}")
+async def delete_profile(profile_id: UUID):
+    """Delete a profile and all associated data"""
+    try:
+        logger.debug(f"Deleting profile with ID: {profile_id}")
+        service = ProfileService()
+
+        # Delete profile and all associated data
+        success = await service.delete_profile(profile_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        return {"message": "Profile and all associated data deleted successfully"}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error deleting profile: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+### api/v1/auth.py
+```
+# api/v1/auth.py
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+from config.jwt import create_access_token
+from supabase import create_client
+import os
+import bcrypt
+from services.email import EmailService
+import random
+import string
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+supabase = create_client(
+    supabase_url=os.getenv("SUPABASE_URL"),
+    supabase_key=os.getenv("SUPABASE_KEY")
+)
+def generate_verification_code():
+    return ''.join(random.choices(string.digits, k=8))
+    
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    
+class SignupRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    password: str
+
+class VerificationRequest(BaseModel):
+    code: str
+    user_id: str
+    
+# api/v1/auth.py
+@router.post("/signup")
+async def signup(request: SignupRequest):
+    try:
+        # Check if user exists
+        result = supabase.table("users").select("*").eq("email", request.email).execute()
+        if result.data:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        # Generate verification code
+        verification_code = generate_verification_code()
+
+        # Create user with verification code in profile
+        user_data = {
+            "first_name": request.first_name,
+            "last_name": request.last_name,
+            "email": request.email,
+            "password": bcrypt.hashpw(request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+            "profile": {
+                "signup_secret": verification_code,
+                "is_validated_by_email": False
+            }
+        }
+
+        result = supabase.table("users").insert(user_data).execute()
+        user = result.data[0]
+
+        # Send verification email (synchronously)
+        email_service = EmailService()
+        email_service.send_verification_email(request.email, verification_code)  # Removed await
+
+        # Create access token
+        access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "first_name": user["first_name"],
+                "last_name": user["last_name"],
+                "is_validated": False
+            }
+        }
+    except Exception as e:
+        print(f"Signup error: {str(e)}")  # Add debug logging
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/verify-email")
+async def verify_email(verification_data: VerificationRequest):
+    try:
+        # Get user
+        result = supabase.table("users").select("*").eq(
+            "id", verification_data.user_id
+        ).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = result.data[0]
+        profile = user.get("profile", {})
+
+        # Check verification code
+        if profile.get("signup_secret") != verification_data.code:
+            return {"verified": False}
+
+        # Update user profile
+        profile["is_validated_by_email"] = True
+        supabase.table("users").update(
+            {"profile": profile}
+        ).eq("id", verification_data.user_id).execute()
+
+        return {"verified": True}
+    except Exception as e:
+        print(f"Verification error: {str(e)}")  # Add debug logging
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/resend-verification")
+async def resend_verification(user_id: str):
+    try:
+        # Get user
+        result = supabase.table("users").select("*").eq("id", user_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user = result.data[0]
+
+        # Generate new verification code
+        verification_code = generate_verification_code()
+
+        # Update user profile
+        profile = user.get("profile", {})
+        profile["signup_secret"] = verification_code
+        supabase.table("users").update({"profile": profile}).eq("id", user_id).execute()
+
+        # Send new verification email
+        email_service = EmailService()
+        await email_service.send_verification_email(user["email"], verification_code)
+
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/login")
+async def login(login_data: LoginRequest):  # Use Pydantic model for validation
+    try:
+        print(f"Login attempt for email: {login_data.email}")  # Debug logging
+
+        # Get user from Supabase
+        result = supabase.table("users").select("*").eq("email", login_data.email).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=401, 
+                detail="Invalid email or password"
+            )
+
+        user = result.data[0]
+
+        # Verify password
+        is_valid = bcrypt.checkpw(
+            login_data.password.encode('utf-8'),
+            user["password"].encode('utf-8')
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=401, 
+                detail="Invalid email or password"
+            )
+
+        # Create access token
+        access_token = create_access_token(
+            data={"sub": user["id"], "email": user["email"]}
+        )
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "first_name": user["first_name"],
+                "last_name": user["last_name"]
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Login error: {str(e)}")  # Debug logging
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 ```
 ----------------------
 When you change existing endpoints give a clear notice.
@@ -1087,7 +1415,7 @@ class MemoryService:
                     "session_id": str(session_id),
                     "category": str(memory.category),
                     "description": str(memory.description),
-                    "time_period": datetime.now().isoformat(),  # Use current time if time_period is causing issues
+                    "time_period": str(memory.time_period),
                     "emotions": [],  # Start with empty arrays if these are causing issues
                     "people": [],
                     "image_urls": [],
@@ -1287,29 +1615,52 @@ class EmpatheticInterviewer:
     async def start_new_session(self, profile_id: UUID, language: str = "en") -> Dict[str, Any]:
         """Start a new interview session for a profile."""
         try:
-            # Generate an empathetic opening question using OpenAI
+            # First, fetch the profile to get the backstory
+            profile_result = self.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
+
+            if not profile_result.data:
+                raise Exception("Profile not found")
+
+            profile = profile_result.data[0]
+            backstory = profile.get("metadata", {}).get("backstory", "")
+            name = f"{profile['first_name']} {profile['last_name']}"
+
+            # Create system prompt with backstory context and language
+            system_prompt = f"""You are an empathetic interviewer helping {name} preserve their memories.
+
+            Context about {name}:
+            {backstory if backstory else "No previous context available."}
+
+            Generate a warm, inviting opening question in {language} that:
+            1. Makes the person feel comfortable sharing memories
+            2. References their background if available
+            3. Is open-ended but specific enough to trigger memories
+            4. Uses appropriate cultural references based on their background
+
+            The entire response should be in {language} language only."""
+
+            # Generate personalized opening question using OpenAI
             response = self.openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {
                         "role": "system",
-                        "content": f"""You are an empathetic interviewer helping people preserve their memories. 
-                        Generate a warm, inviting opening question that encourages sharing personal memories.
-                        Respond in {language} language only."""
+                        "content": system_prompt
                     },
                     {
                         "role": "user",
-                        "content": "Generate an opening question for a memory preservation interview."
+                        "content": f"Generate an opening question for {name}'s memory preservation interview."
                     }
                 ],
-                max_tokens=100
+                max_tokens=150,
+                temperature=0.7
             )
 
             initial_question = response.choices[0].message.content
             session_id = uuid4()
             now = datetime.utcnow()
 
-            # Create session record...
+            # Create session record
             session_data = {
                 "id": str(session_id),
                 "profile_id": str(profile_id),
@@ -1334,7 +1685,7 @@ class EmpatheticInterviewer:
 
             return {
                 "session_id": str(session_id),
-                "initial_question": initial_question or "Tell me about a memorable moment from your life.",
+                "initial_question": initial_question,
                 "started_at": now.isoformat(),
                 "profile_id": str(profile_id)
             }
@@ -1342,7 +1693,6 @@ class EmpatheticInterviewer:
         except Exception as e:
             logger.error(f"Error starting interview session: {str(e)}")
             raise Exception(f"Failed to start interview session: {str(e)}")
-
     async def process_interview_response(
         self,
         profile_id: UUID,
@@ -1496,12 +1846,17 @@ class EmpatheticInterviewer:
 ### services/profile.py
 ```
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, UUID4
 from supabase import create_client, Client
 import os
 import logging
+import json
 from models.profile import Profile, ProfileCreate
+from models.memory import MemoryCreate, Category, Memory, Location
+from services.memory import MemoryService
+import openai
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -1514,17 +1869,158 @@ class ProfileService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
-        self.table_name = "profiles"
+        self.openai_client = openai.Client(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
 
+    async def parse_backstory(self, profile_id: UUID, backstory: str, profile_data: Dict[str, Any], language: str = "de") -> None:
+        """Parse memories from backstory and create initial memories in the specified language"""
+        try:
+            logger.info(f"Parsing backstory for profile {profile_id} in language {language}")
+
+            # Create single session for all initial memories
+            session_data = {
+                "id": str(uuid4()),
+                "profile_id": str(profile_id),
+                "category": "initial",
+                "started_at": datetime.utcnow().isoformat(),
+                "emotional_state": {"initial": "neutral"},
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            # Create session
+            try:
+                session_result = self.supabase.table("interview_sessions").insert(session_data).execute()
+                if not session_result.data:
+                    raise Exception("Failed to create interview session")
+                session_id = session_result.data[0]['id']
+                logger.info(f"Created interview session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create interview session: {str(e)}")
+                raise
+
+            # Use the same session_id for all memories
+
+            # Create birth memory
+            try:
+                city = profile_data['place_of_birth'].split(',')[0].strip()
+                country = profile_data['place_of_birth'].split(',')[-1].strip()
+
+                birth_description = {
+                    "de": f"{profile_data['first_name']} {profile_data['last_name']} wurde in {profile_data['place_of_birth']} geboren",
+                    "en": f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}"
+                }.get(language, f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}")
+
+                birth_memory = MemoryCreate(
+                    category=Category.CHILDHOOD,
+                    description=birth_description,
+                    time_period=datetime.strptime(profile_data['date_of_birth'], "%Y-%m-%d"),
+                    location=Location(
+                        name=profile_data['place_of_birth'],
+                        city=city,
+                        country=country,
+                        description="Geburtsort" if language == "de" else "Place of birth"
+                    )
+                )
+
+                await MemoryService.create_memory(birth_memory, profile_id, session_id)
+                logger.info("Birth memory created successfully")
+
+            except Exception as e:
+                logger.error(f"Error creating birth memory: {str(e)}")
+
+            # Parse and create additional memories using the SAME session_id
+            try:
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": f"""Extract distinct memories from the backstory and format them as a JSON object.
+                            The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
+                            Write all text content in {language} language.
+                            For each memory in the "memories" array, provide:
+                            {{
+                                "description": "Full description of the memory in {language}",
+                                "category": "One of: childhood/career/relationships/travel/hobbies/pets",
+                                "date": "YYYY-MM-DD (approximate if not specified)",
+                                "location": {{
+                                    "name": "Location name",
+                                    "city": "City if mentioned",
+                                    "country": "Country if mentioned",
+                                    "description": "Brief description of the location in {language}"
+                                }}
+                            }}"""
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Please analyze this text and return the memories as JSON: {backstory}"
+                        }
+                    ],
+                    response_format={ "type": "json_object" }
+                )
+
+                try:
+                    parsed_memories = json.loads(response.choices[0].message.content)
+                    logger.info(f"Parsed memories: {parsed_memories}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {str(e)}")
+                    logger.error(f"Raw response: {response.choices[0].message.content}")
+                    raise Exception("Failed to parse OpenAI response")
+
+                # Create all memories using the same session_id
+                for memory_data in parsed_memories.get('memories', []):
+                    try:
+                        category_str = memory_data.get('category', 'childhood').upper()
+                        category = getattr(Category, category_str, Category.CHILDHOOD)
+
+                        logger.info("------------------- parsed memory -----------")
+                        logger.info(category)
+                        logger.info(memory_data.get('description'))
+                        logger.info(memory_data.get('date'))
+
+                        memory = MemoryCreate(
+                            category=category,
+                            description=memory_data['description'],
+                            time_period=memory_data.get('date'),
+                            location=Location(**memory_data['location']) if memory_data.get('location') else None
+                        )
+
+                        # Use the same session_id for all memories
+                        await MemoryService.create_memory(memory, profile_id, session_id)
+                        logger.debug(f"Created memory: {memory.description}")
+
+                    except Exception as e:
+                        logger.error(f"Error creating individual memory: {str(e)}")
+                        continue
+
+            except Exception as e:
+                logger.error(f"Error parsing memories from backstory: {str(e)}")
+                raise
+
+        except Exception as e:
+            logger.error(f"Error in parse_backstory: {str(e)}")
+            raise Exception(f"Failed to parse backstory: {str(e)}")
+            
     @classmethod
     async def get_all_profiles(cls) -> List[Profile]:
         """Get all profiles"""
         try:
             service = cls()
-            result = service.supabase.table(service.table_name).select("*").order(
-                'updated_at', desc=True
-            ).execute()
+            
+            # Direct SQL query to get profiles with their session counts
+            query = """
+                SELECT p.*,
+                       (SELECT COUNT(*) 
+                        FROM interview_sessions 
+                        WHERE profile_id = p.id) as session_count
+                FROM profiles p
+                ORDER BY p.updated_at DESC
+            """
 
+            result = service.supabase.table('profiles').select("*").execute()
+            
             profiles = []
             for profile_data in result.data:
                 try:
@@ -1543,7 +2039,19 @@ class ProfileService:
                         profile_data['updated_at'] = datetime.fromisoformat(
                             profile_data['updated_at']
                         )
+                    
+                    # Initialize metadata if it doesn't exist
+                    if not profile_data.get('metadata'):
+                        profile_data['metadata'] = {}
 
+                    # Add session count to metadata
+                    session_count_result = service.supabase.table('interview_sessions')\
+                        .select('id', count='exact')\
+                        .eq('profile_id', profile_data['id'])\
+                        .execute()
+
+                    profile_data['metadata']['session_count'] = session_count_result.count
+                    
                     profiles.append(Profile(**profile_data))
                 except Exception as e:
                     logger.error(f"Error converting profile data: {str(e)}")
@@ -1555,14 +2063,20 @@ class ProfileService:
         except Exception as e:
             logger.error(f"Error fetching all profiles: {str(e)}")
             raise
-    
-    @staticmethod
-    async def create_profile(profile_data: ProfileCreate) -> Profile:
-        """
-        Creates a new profile in the Supabase table.
-        """
+
+    @classmethod
+    async def create_profile(cls, profile_data: ProfileCreate, language: str = "en") -> Profile:
+        """Creates a new profile and initializes memories from backstory"""
         try:
-            # Convert profile data to dict
+            service = cls()  # Create instance
+
+            # Extract backstory from metadata if present
+            backstory = None
+            metadata = profile_data.metadata if hasattr(profile_data, 'metadata') else {}
+            if isinstance(metadata, dict):
+                backstory = metadata.get('backstory')
+
+            # Prepare profile data for database
             data = {
                 "first_name": profile_data.first_name,
                 "last_name": profile_data.last_name,
@@ -1571,22 +2085,35 @@ class ProfileService:
                 "gender": profile_data.gender,
                 "children": profile_data.children,
                 "spoken_languages": profile_data.spoken_languages,
-                "profile_image_url": profile_data.profile_image_url
+                "profile_image_url": profile_data.profile_image_url,
+                "metadata": metadata,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
             }
 
-            # Insert data into Supabase
-            response = supabase.table(ProfileService.table_name).insert(data).execute()
-          
-            if hasattr(response, 'error') and response.error:
-                raise Exception(f"Supabase error: {response.error}")
+            # Insert profile into database
+            result = service.supabase.table(service.table_name).insert(data).execute()
 
-            result_data = response.data[0] if response.data else None
-            if not result_data:
-                raise Exception("No data returned from Supabase")
+            if not result.data:
+                raise Exception("No data returned from profile creation")
 
-            return Profile(**result_data)
+            profile_id = result.data[0]['id']
+            created_profile = Profile(**result.data[0])
+
+            # Parse backstory and create initial memories if backstory exists
+            if backstory:
+                await service.parse_backstory(
+                    profile_id=profile_id,
+                    backstory=backstory,
+                    profile_data=data,
+                    language=language  # Pass the language parameter
+                )
+
+            return created_profile
+
         except Exception as e:
-            raise Exception(f"Failed to create profile: {str(e)}")
+            logger.error(f"Error creating profile: {str(e)}")
+        raise Exception(f"Failed to create profile: {str(e)}")
 
     async def get_profile(self, profile_id: UUID4) -> Optional[Profile]:
         """Retrieves a profile by ID"""
@@ -1652,19 +2179,41 @@ class ProfileService:
     @staticmethod
     async def delete_profile(profile_id: UUID4) -> bool:
         """
-        Deletes a profile by ID.
+        Deletes a profile and all associated data by ID.
         """
         try:
-            # Delete the profile from Supabase
-            response = supabase.table(ProfileService.table_name).delete().eq("id", str(profile_id)).execute()
+            service = ProfileService()
 
-            # Check for errors
-            if response.get("error"):
-                raise Exception(f"Supabase error: {response['error']['message']}")
+            # First get the profile to check if it exists and get image URL
+            result = service.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
 
-            # Return True if deletion was successful
-            return response["data"] is not None
+            if not result.data:
+                return False
+
+            profile = result.data[0]
+
+            # Delete profile image from storage if it exists
+            if profile.get('profile_image_url'):
+                try:
+                    # Extract filename from URL
+                    filename = profile['profile_image_url'].split('/')[-1]
+                    service.supabase.storage.from_("profile-images").remove([filename])
+                    logger.debug(f"Deleted profile image: {filename}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete profile image: {str(e)}")
+
+            # Delete all related data
+            # Note: Due to cascade delete in Supabase, we only need to delete the profile
+            result = service.supabase.table("profiles").delete().eq("id", str(profile_id)).execute()
+
+            if result.data:
+                logger.info(f"Successfully deleted profile {profile_id} and all associated data")
+                return True
+
+            return False
+
         except Exception as e:
+            logger.error(f"Failed to delete profile {profile_id}: {str(e)}")
             raise Exception(f"Failed to delete profile: {str(e)}")
 ```
 
@@ -1685,8 +2234,22 @@ from models.memory import (
     Emotion
 )
 from services.memory import MemoryService
+import neo4j
+from neo4j_graphrag.llm import OpenAILLM as LLM
+from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
+from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
+from neo4j_graphrag.retrievers import VectorRetriever
+from neo4j_graphrag.generation.graphrag import GraphRAG
+from neo4j_graphrag.experimental.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
+import os
+import asyncio
+import time
 
 logger = logging.getLogger(__name__)
+
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 class MemoryClassification(BaseModel):
     """Model for classified memory information"""
@@ -1746,6 +2309,8 @@ class KnowledgeManagement:
             if classification.timestamp in ["unbekannt", "unknown", ""]:
                 classification.timestamp = datetime.now().strftime("%Y-%m-%d")
 
+            classification.timestamp = classification.timestamp.replace("-XX", "-01")
+            
             logger.info(f"Memory classification complete: {classification}")
             return classification
 
@@ -1793,9 +2358,8 @@ class KnowledgeManagement:
                 session_id
             )
 
-            # TODO: Store in Neo4j knowledge graph
-            # This will be implemented later to create nodes and relationships
-            # in the graph database based on the memory content
+            # in the background: store in Neo4j knowledge graph (vector and graph search)
+            asyncio.create_task(self.append_to_rag(classification.rewritten_text, classification.category, classification.location))
 
             logger.info(f"Memory stored successfully")
             return stored_memory
@@ -1803,6 +2367,585 @@ class KnowledgeManagement:
         except Exception as e:
             logger.error(f"Error storing memory: {str(e)}")
             raise
+            
+    async def append_to_rag(self, memory_text, category, location):
+
+        neo4j_driver = neo4j.GraphDatabase.driver(NEO4J_URI,
+            auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
+
+        ex_llm=LLM(
+        model_name="gpt-4o-mini",
+        model_params={
+        "response_format": {"type": "json_object"},
+        "temperature": 0
+        })
+
+        embedder = Embeddings()
+
+        prompt_for_noblivion = '''
+        You are a knowledge manager and you task is extracting information from life memories of people 
+        and structuring it in a property graph to inform further research and Q&A.
+
+        Extract the entities (nodes) and specify their type from the following Input text.
+        Also extract the relationships between these nodes. the relationship direction goes from the start node to the end node. 
+
+        Return result as JSON using the following format:
+        {{"nodes": [ {{"id": "0", "label": "the type of entity", "properties": {{"name": "name of entity" }} }}],
+        "relationships": [{{"type": "TYPE_OF_RELATIONSHIP", "start_node_id": "0", "end_node_id": "1", "properties": {{"details": "Description of the relationship"}} }}] }}
+
+        - Use only the information from the Input text. Do not add any additional information.  
+        - If the input text is empty, return empty Json. 
+        - Make sure to create as many nodes and relationships as needed to offer rich medical context for further research.
+        - An AI knowledge assistant must be able to read this graph and immediately understand the context to inform detailed research questions. 
+        - Multiple documents will be ingested from different sources and we are using this property graph to connect information, so make sure entity types are fairly general. 
+
+        Use only fhe following nodes and relationships (if provided):
+        --------------------
+
+        --------------------
+
+        Assign a unique ID (string) to each node, and reuse it to define relationships.
+        Do respect the source and target node types for relationship and
+        the relationship direction.
+
+        Do not return any additional information other than the JSON in it.
+
+        Examples:
+        {examples}
+
+        Input text:
+
+        {text}
+        '''
+
+        """
+        class SimpleKGPipelineConfig(BaseModel):
+        llm: LLMInterface
+        driver: neo4j.Driver
+        from_pdf: bool
+        embedder: Embedder
+        entities: list[SchemaEntity] = Field(default_factory=list)
+        relations: list[SchemaRelation] = Field(default_factory=list)
+        potential_schema: list[tuple[str, str, str]] = Field(default_factory=list)
+        pdf_loader: Any = None
+        kg_writer: Any = None
+        text_splitter: Any = None
+        on_error: OnError = OnError.RAISE
+        prompt_template: Union[ERExtractionTemplate, str] = ERExtractionTemplate()
+        perform_entity_resolution: bool = True
+        lexical_graph_config: Optional[LexicalGraphConfig] = None
+        neo4j_database: Optional[str] = None
+
+        model_config = ConfigDict(arbitrary_types_allowed=True)
+        """
+
+        entities_noblivion = [
+        "Person",
+        "City",
+        "Country",
+        "Job",
+        "Organization",
+        "Pet",
+        "MedicalCondition",
+        "MedicalProcedure",
+        "Car",
+        "House",
+        "Book",
+        "Movie",
+        "Series"
+        ]
+
+        relations_noblivion = [
+        "TRAVELED_TO",
+        "FIRST_MET",
+        "BOUGHT",
+        "WATCHED",
+        "HAS_READ",
+        "IS_FRIEND_OF",
+        "SOLD",
+        "WORKED_AT",
+        "LIKED",
+        "HATED",
+        "LIVED_IN",
+        "HAPPENED_IN"
+        ]
+        
+        # Build KG and Store in Neo4j Database
+        kg_builder_txt = SimpleKGPipeline(
+             llm=ex_llm,
+             driver=neo4j_driver,
+             embedder=embedder,
+             relations=relations_noblivion,
+             entities=entities_noblivion,
+             text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=500),
+             prompt_template=prompt_for_noblivion,
+             from_pdf=False
+        )
+        logger.info("...Executing RAG pipeline")
+        start_time = time.time()
+        await kg_builder_txt.run_async(text=f'{memory_text} category {category} location {location}') 
+        end_time = time.time()
+        execution_time = end_time - start_time
+        logger.info(f"...> RAG pipeline execution time: {execution_time} seconds")
+        
+        return ""
+```
+
+### services/email.py
+```
+# services/email.py
+import os
+from mailersend import emails
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class EmailService:
+    def __init__(self):
+        self.api_key = os.getenv('MAILERSEND_API_KEY')
+        self.sender_domain = os.getenv('MAILERSEND_SENDER_EMAIL')
+        self.mailer = emails.NewEmail(self.api_key)
+
+    def send_verification_email(self, to_email: str, verification_code: str):
+        try:
+            # Read template
+            template_path = Path("templates/account-verification-en.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+
+            # Replace placeholder
+            html_content = html_content.replace("{verification_code}", verification_code)
+
+            # Prepare empty mail body
+            mail_body = {}
+
+            # Set sender
+            mail_from = {
+                "name": "Noblivion",
+                "email": self.sender_domain
+            }
+            self.mailer.set_mail_from(mail_from, mail_body)
+
+            # Set recipient
+            recipients = [
+                {
+                    "name": to_email,
+                    "email": to_email
+                }
+            ]
+            self.mailer.set_mail_to(recipients, mail_body)
+
+            # Set subject
+            self.mailer.set_subject("Verify your Noblivion account", mail_body)
+
+            # Set content
+            self.mailer.set_html_content(html_content, mail_body)
+            self.mailer.set_plaintext_content(
+                f"Your verification code is: {verification_code}", 
+                mail_body
+            )
+
+            # Send email synchronously
+            return self.mailer.send(mail_body)
+
+        except Exception as e:
+            print(f"Failed to send verification email: {str(e)}")
+            raise
+```
+
+### services/profile.py
+```
+from datetime import date, datetime
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, UUID4
+from supabase import create_client, Client
+import os
+import logging
+import json
+from models.profile import Profile, ProfileCreate
+from models.memory import MemoryCreate, Category, Memory, Location
+from services.memory import MemoryService
+import openai
+from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
+
+# Service Class
+class ProfileService:
+    table_name = "profiles"
+
+    def __init__(self):
+        self.supabase = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+        self.openai_client = openai.Client(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+
+    async def parse_backstory(self, profile_id: UUID, backstory: str, profile_data: Dict[str, Any], language: str = "de") -> None:
+        """Parse memories from backstory and create initial memories in the specified language"""
+        try:
+            logger.info(f"Parsing backstory for profile {profile_id} in language {language}")
+
+            # Create single session for all initial memories
+            session_data = {
+                "id": str(uuid4()),
+                "profile_id": str(profile_id),
+                "category": "initial",
+                "started_at": datetime.utcnow().isoformat(),
+                "emotional_state": {"initial": "neutral"},
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            # Create session
+            try:
+                session_result = self.supabase.table("interview_sessions").insert(session_data).execute()
+                if not session_result.data:
+                    raise Exception("Failed to create interview session")
+                session_id = session_result.data[0]['id']
+                logger.info(f"Created interview session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create interview session: {str(e)}")
+                raise
+
+            # Use the same session_id for all memories
+
+            # Create birth memory
+            try:
+                city = profile_data['place_of_birth'].split(',')[0].strip()
+                country = profile_data['place_of_birth'].split(',')[-1].strip()
+
+                birth_description = {
+                    "de": f"{profile_data['first_name']} {profile_data['last_name']} wurde in {profile_data['place_of_birth']} geboren",
+                    "en": f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}"
+                }.get(language, f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}")
+
+                birth_memory = MemoryCreate(
+                    category=Category.CHILDHOOD,
+                    description=birth_description,
+                    time_period=datetime.strptime(profile_data['date_of_birth'], "%Y-%m-%d"),
+                    location=Location(
+                        name=profile_data['place_of_birth'],
+                        city=city,
+                        country=country,
+                        description="Geburtsort" if language == "de" else "Place of birth"
+                    )
+                )
+
+                await MemoryService.create_memory(birth_memory, profile_id, session_id)
+                logger.info("Birth memory created successfully")
+
+            except Exception as e:
+                logger.error(f"Error creating birth memory: {str(e)}")
+
+            # Parse and create additional memories using the SAME session_id
+            try:
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": f"""Extract distinct memories from the backstory and format them as a JSON object.
+                            The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
+                            Write all text content in {language} language.
+                            For each memory in the "memories" array, provide:
+                            {{
+                                "description": "Full description of the memory in {language}",
+                                "category": "One of: childhood/career/relationships/travel/hobbies/pets",
+                                "date": "YYYY-MM-DD (approximate if not specified)",
+                                "location": {{
+                                    "name": "Location name",
+                                    "city": "City if mentioned",
+                                    "country": "Country if mentioned",
+                                    "description": "Brief description of the location in {language}"
+                                }}
+                            }}"""
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Please analyze this text and return the memories as JSON: {backstory}"
+                        }
+                    ],
+                    response_format={ "type": "json_object" }
+                )
+
+                try:
+                    parsed_memories = json.loads(response.choices[0].message.content)
+                    logger.info(f"Parsed memories: {parsed_memories}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {str(e)}")
+                    logger.error(f"Raw response: {response.choices[0].message.content}")
+                    raise Exception("Failed to parse OpenAI response")
+
+                # Create all memories using the same session_id
+                for memory_data in parsed_memories.get('memories', []):
+                    try:
+                        category_str = memory_data.get('category', 'childhood').upper()
+                        category = getattr(Category, category_str, Category.CHILDHOOD)
+
+                        logger.info("------------------- parsed memory -----------")
+                        logger.info(category)
+                        logger.info(memory_data.get('description'))
+                        logger.info(memory_data.get('date'))
+
+                        memory = MemoryCreate(
+                            category=category,
+                            description=memory_data['description'],
+                            time_period=memory_data.get('date'),
+                            location=Location(**memory_data['location']) if memory_data.get('location') else None
+                        )
+
+                        # Use the same session_id for all memories
+                        await MemoryService.create_memory(memory, profile_id, session_id)
+                        logger.debug(f"Created memory: {memory.description}")
+
+                    except Exception as e:
+                        logger.error(f"Error creating individual memory: {str(e)}")
+                        continue
+
+            except Exception as e:
+                logger.error(f"Error parsing memories from backstory: {str(e)}")
+                raise
+
+        except Exception as e:
+            logger.error(f"Error in parse_backstory: {str(e)}")
+            raise Exception(f"Failed to parse backstory: {str(e)}")
+            
+    @classmethod
+    async def get_all_profiles(cls) -> List[Profile]:
+        """Get all profiles"""
+        try:
+            service = cls()
+            
+            # Direct SQL query to get profiles with their session counts
+            query = """
+                SELECT p.*,
+                       (SELECT COUNT(*) 
+                        FROM interview_sessions 
+                        WHERE profile_id = p.id) as session_count
+                FROM profiles p
+                ORDER BY p.updated_at DESC
+            """
+
+            result = service.supabase.table('profiles').select("*").execute()
+            
+            profiles = []
+            for profile_data in result.data:
+                try:
+                    # Convert date strings
+                    if isinstance(profile_data['date_of_birth'], str):
+                        profile_data['date_of_birth'] = datetime.fromisoformat(
+                            profile_data['date_of_birth']
+                        ).date()
+
+                    if isinstance(profile_data['created_at'], str):
+                        profile_data['created_at'] = datetime.fromisoformat(
+                            profile_data['created_at']
+                        )
+
+                    if isinstance(profile_data['updated_at'], str):
+                        profile_data['updated_at'] = datetime.fromisoformat(
+                            profile_data['updated_at']
+                        )
+                    
+                    # Initialize metadata if it doesn't exist
+                    if not profile_data.get('metadata'):
+                        profile_data['metadata'] = {}
+
+                    # Add session count to metadata
+                    session_count_result = service.supabase.table('interview_sessions')\
+                        .select('id', count='exact')\
+                        .eq('profile_id', profile_data['id'])\
+                        .execute()
+
+                    profile_data['metadata']['session_count'] = session_count_result.count
+                    
+                    profiles.append(Profile(**profile_data))
+                except Exception as e:
+                    logger.error(f"Error converting profile data: {str(e)}")
+                    logger.error(f"Problematic profile data: {profile_data}")
+                    continue
+
+            return profiles
+
+        except Exception as e:
+            logger.error(f"Error fetching all profiles: {str(e)}")
+            raise
+
+    @classmethod
+    async def create_profile(cls, profile_data: ProfileCreate, language: str = "en") -> Profile:
+        """Creates a new profile and initializes memories from backstory"""
+        try:
+            service = cls()  # Create instance
+
+            # Extract backstory from metadata if present
+            backstory = None
+            metadata = profile_data.metadata if hasattr(profile_data, 'metadata') else {}
+            if isinstance(metadata, dict):
+                backstory = metadata.get('backstory')
+
+            # Prepare profile data for database
+            data = {
+                "first_name": profile_data.first_name,
+                "last_name": profile_data.last_name,
+                "date_of_birth": profile_data.date_of_birth.isoformat(),
+                "place_of_birth": profile_data.place_of_birth,
+                "gender": profile_data.gender,
+                "children": profile_data.children,
+                "spoken_languages": profile_data.spoken_languages,
+                "profile_image_url": profile_data.profile_image_url,
+                "metadata": metadata,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            # Insert profile into database
+            result = service.supabase.table(service.table_name).insert(data).execute()
+
+            if not result.data:
+                raise Exception("No data returned from profile creation")
+
+            profile_id = result.data[0]['id']
+            created_profile = Profile(**result.data[0])
+
+            # Parse backstory and create initial memories if backstory exists
+            if backstory:
+                await service.parse_backstory(
+                    profile_id=profile_id,
+                    backstory=backstory,
+                    profile_data=data,
+                    language=language  # Pass the language parameter
+                )
+
+            return created_profile
+
+        except Exception as e:
+            logger.error(f"Error creating profile: {str(e)}")
+        raise Exception(f"Failed to create profile: {str(e)}")
+
+    async def get_profile(self, profile_id: UUID4) -> Optional[Profile]:
+        """Retrieves a profile by ID"""
+        try:
+            logger.debug(f"Fetching profile with ID: {profile_id}")
+
+            # Fetch the profile from Supabase
+            result = self.supabase.table(self.table_name)\
+                .select("*")\
+                .eq("id", str(profile_id))\
+                .execute()
+
+            if not result.data:
+                return None
+
+            profile_data = result.data[0]
+
+            # Convert date strings to proper date objects
+            if isinstance(profile_data['date_of_birth'], str):
+                profile_data['date_of_birth'] = datetime.fromisoformat(
+                    profile_data['date_of_birth']
+                ).date()
+
+            if isinstance(profile_data['created_at'], str):
+                profile_data['created_at'] = datetime.fromisoformat(
+                    profile_data['created_at']
+                )
+
+            if isinstance(profile_data['updated_at'], str):
+                profile_data['updated_at'] = datetime.fromisoformat(
+                    profile_data['updated_at']
+                )
+
+            return Profile(**profile_data)
+
+        except Exception as e:
+            logger.error(f"Error in get_profile: {str(e)}")
+            logger.error(f"Profile ID: {profile_id}")
+            logger.error(f"Profile data: {profile_data if 'profile_data' in locals() else 'No data fetched'}")
+            raise
+
+
+    @staticmethod
+    async def update_profile(profile_id: UUID4, profile_data: ProfileCreate) -> Profile:
+        """
+        Updates an existing profile by ID.
+        """
+        try:
+            # Update data in Supabase
+            response = supabase.table(ProfileService.table_name).update(profile_data.dict()).eq("id", str(profile_id)).execute()
+
+            # Check for errors
+            if response.get("error"):
+                raise Exception(f"Supabase error: {response['error']['message']}")
+
+            if response["data"]:
+                profile = Profile(**response["data"][0])
+                return profile
+            raise Exception("Profile not found")
+        except Exception as e:
+            raise Exception(f"Failed to update profile: {str(e)}")
+
+    @staticmethod
+    async def delete_profile(profile_id: UUID4) -> bool:
+        """
+        Deletes a profile and all associated data by ID.
+        """
+        try:
+            service = ProfileService()
+
+            # First get the profile to check if it exists and get image URL
+            result = service.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
+
+            if not result.data:
+                return False
+
+            profile = result.data[0]
+
+            # Delete profile image from storage if it exists
+            if profile.get('profile_image_url'):
+                try:
+                    # Extract filename from URL
+                    filename = profile['profile_image_url'].split('/')[-1]
+                    service.supabase.storage.from_("profile-images").remove([filename])
+                    logger.debug(f"Deleted profile image: {filename}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete profile image: {str(e)}")
+
+            # Delete all related data
+            # Note: Due to cascade delete in Supabase, we only need to delete the profile
+            result = service.supabase.table("profiles").delete().eq("id", str(profile_id)).execute()
+
+            if result.data:
+                logger.info(f"Successfully deleted profile {profile_id} and all associated data")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to delete profile {profile_id}: {str(e)}")
+            raise Exception(f"Failed to delete profile: {str(e)}")
+```
+
+### dependencies/auth.py
+```
+# dependencies/auth.py
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from config.jwt import decode_token
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    payload = decode_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
 ```
 --------------
 
@@ -1870,6 +3013,32 @@ This is the current schema in Supabase:
 create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
+CREATE TABLE public.users (
+    instance_id uuid, 
+    id uuid NOT NULL DEFAULT uuid_generate_v4(), 
+    id uuid NOT NULL, 
+    first_name text NOT NULL, 
+    aud character varying(255), 
+    last_name text NOT NULL, 
+    email text NOT NULL, role character varying(255), 
+    email character varying(255), 
+    password text NOT NULL, 
+    encrypted_password character varying(255), 
+    created_at timestamp with time zone DEFAULT now(), 
+    updated_at timestamp with time zone DEFAULT now(), 
+    email_confirmed_at timestamp with time zone, 
+    invited_at timestamp with time zone, 
+    profile jsonb DEFAULT '{"is_validated_by_email": false}'::jsonb, 
+    confirmation_token character varying(255), 
+    confirmation_sent_at timestamp with time zone, 
+    recovery_token character varying(255), 
+    recovery_sent_at timestamp with time zone, 
+    email_change_token_new character varying(255), 
+    email_change character varying(255), 
+    email_change_sent_at timestamp with time zone, 
+    last_sign_in_at timestamp with time zone, 
+    raw_app_meta_data jsonb, 
+    raw_user_meta_data jsonb, is_super_admin boolean, created_at timestamp with time zone, updated_at timestamp with time zone, phone text DEFAULT NULL::character varying, phone_confirmed_at timestamp with time zone, phone_change text DEFAULT ''::character varying, phone_change_token character varying(255) DEFAULT ''::character varying, phone_change_sent_at timestamp with time zone, confirmed_at timestamp with time zone, email_change_token_current character varying(255) DEFAULT ''::character varying, email_change_confirm_status smallint DEFAULT 0, banned_until timestamp with time zone, reauthentication_token character varying(255) DEFAULT ''::character varying, reauthentication_sent_at timestamp with time zone, is_sso_user boolean NOT NULL DEFAULT false, deleted_at timestamp with time zone, is_anonymous boolean NOT NULL DEFAULT false);
 -- Profiles table
 create table profiles (
     id uuid primary key default uuid_generate_v4(),
