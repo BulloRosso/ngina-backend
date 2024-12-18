@@ -18,7 +18,12 @@ class Profile(ProfileCreate):
     id: UUID4
     created_at: datetime
     updated_at: datetime
-
+    subscribed_at: Optional[datetime] = None
+    
+    @property
+    def is_subscribed(self) -> bool:
+        return self.subscribed_at is not None
+    
     @property
     def age(self) -> int:
         today = date.today()

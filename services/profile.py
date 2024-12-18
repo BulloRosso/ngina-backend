@@ -193,6 +193,11 @@ class ProfileService:
                             profile_data['updated_at']
                         )
                     
+                    if isinstance(profile_data['subscribed_at'], str):
+                        profile_data['subscribed_at'] = datetime.fromisoformat(profile_data['subscribed_at'])
+                    else:
+                        profile_data['subscribed_at'] = None
+                        
                     # Initialize metadata if it doesn't exist
                     if not profile_data.get('metadata'):
                         profile_data['metadata'] = {}
