@@ -74,6 +74,7 @@ class InterviewResponse(BaseModel):
     audio_url: Optional[str] = None
     emotions_detected: Optional[List[Emotion]] = None
     session_id: Optional[UUID] = None  
+    user_id: UUID
 
 class InterviewQuestion(BaseModel):
     text: str

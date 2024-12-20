@@ -104,6 +104,7 @@ class EmpatheticInterviewer:
             
     async def process_interview_response(
         self,
+        user_id: UUID,
         profile_id: UUID,
         session_id: UUID,
         response_text: str,
@@ -115,11 +116,11 @@ class EmpatheticInterviewer:
         try:
             # First, get profile settings
             profile_result = self.supabase.table("users").select("profile").eq(
-                "id", str(profile_id)
+                "id", str(user_id)
             ).execute()
 
             if not profile_result.data:
-                raise Exception("Profile not found")
+                raise Exception(f"Profile not found {user_id}")
 
             profile_settings = profile_result.data[0].get("profile", {})
 
@@ -148,7 +149,7 @@ class EmpatheticInterviewer:
 
             # If it's a memory, store it
             if classification.is_memory:
-                logger.info(f"rewrittenText='{classification.rewrittenText}'")
+                logger.info(f"rewrittenText='{classification.rewritten_text}'")
                 logger.info(f"narrator_perspective='{narrator_perspective}'")
                 await self.knowledge_manager.store_memory(
                     profile_id,

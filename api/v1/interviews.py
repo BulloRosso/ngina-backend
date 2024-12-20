@@ -26,6 +26,7 @@ async def process_response(
     try:
         interviewer = EmpatheticInterviewer()
         return await interviewer.process_interview_response(
+            user_id=response.user_id,
             profile_id=profile_id,
             session_id=session_id,
             response_text=response.text,
