@@ -83,6 +83,41 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
+            # Get narrator settings from user profile
+            user_result = self.supabase.table("users").select("profile").eq("id", str(profile_id)).execute()
+            user_profile = user_result.data[0].get("profile", {}) if user_result.data else {}
+
+            # Get narrative settings with defaults
+            narrator_perspective = user_profile.get("narrator_perspective", "ego")
+            narrator_style = user_profile.get("narrator_style", "neutral")
+            narrator_verbosity = user_profile.get("narrator_verbosity", "normal")
+
+            # Convert perspective setting to prompt text
+            perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
+
+            # Convert style setting to prompt text
+            style_text = {
+                "professional": "using a clear and professional tone",
+                "romantic": "using a warm and emotional tone",
+                "optimistic": "using a positive and uplifting tone",
+                "neutral": "using a balanced and neutral tone"
+            }.get(narrator_style, "using a neutral tone")
+
+            # Convert verbosity setting to prompt text
+            verbosity_text = {
+                "verbose": "more detailed and elaborate",
+                "normal": "similar in length",
+                "brief": "more concise and focused"
+            }.get(narrator_verbosity, "similar in length")
+
+            # Set temperature based on style
+            temperature = {
+                "professional": 0.1,
+                "neutral": 0.3
+            }.get(narrator_style, 0.7)
+
+            logger.debug(f"Using narrative settings - perspective: {perspective_text}, style: {style_text}, verbosity: {verbosity_text}, temperature: {temperature}")
+            
             # Parse and create additional memories using the SAME session_id
             try:
                 response = self.openai_client.chat.completions.create(
@@ -93,6 +128,10 @@ class ProfileService:
                             "content": f"""Extract distinct memories from the backstory and format them as a JSON object.
                             The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
                             Write all text content in {language} language.
+
+                            Format each memory {perspective_text}, {style_text}. 
+                            Compared to the source text, your description should be {verbosity_text}.
+
                             For each memory in the "memories" array, provide:
                             {{
                                 "description": "Full description of the memory in {language}",
@@ -111,7 +150,8 @@ class ProfileService:
                             "content": f"Please analyze this text and return the memories as JSON: {backstory}"
                         }
                     ],
-                    response_format={ "type": "json_object" }
+                    response_format={ "type": "json_object" },
+                    temperature=temperature
                 )
 
                 try:

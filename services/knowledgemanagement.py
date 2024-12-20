@@ -43,14 +43,46 @@ class KnowledgeManagement:
     def __init__(self):
         self.memory_service = MemoryService()
     
+    # In services/knowledgemanagement.py
     @staticmethod
-    async def analyze_response(response_text: str, client, language: str = "en") -> MemoryClassification:
-        """Analyze user response to classify and enhance memory content"""
+    async def analyze_response(
+        response_text: str, 
+        client, 
+        language: str = "en",
+        narrator_perspective: str = "ego",
+        narrator_style: str = "neutral",
+        narrator_verbosity: str = "normal"
+    ) -> MemoryClassification:
+        """Analyze user response to classify and enhance memory content with profile settings"""
         try:
-            # Update the prompt to handle unknown dates and locations better
+            # Convert perspective setting to prompt text
+            perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
+
+            # Convert style setting to prompt text
+            style_text = {
+                "professional": "using a clear and professional tone",
+                "romantic": "using a warm and emotional tone",
+                "optimistic": "using a positive and uplifting tone",
+                "neutral": "using a balanced and neutral tone"
+            }.get(narrator_style, "using a neutral tone")
+
+            # Convert verbosity setting to prompt text
+            verbosity_text = {
+                "verbose": "more detailed and elaborate",
+                "normal": "similar in length",
+                "brief": "more concise and focused"
+            }.get(narrator_verbosity, "similar in length")
+
+            # Set temperature based on style
+            temperature = {
+                "professional": 0.1,
+                "neutral": 0.3
+            }.get(narrator_style, 0.7)
+
+            # Build the prompt
             prompt = f"""Analyze the following text and classify it as a memory or not. 
-            If it is a memory, rewrite it in complete sentences using a friendly and optimistic tone, 
-            in first person view. Also extract the category, location, and timestamp.
+            If it is a memory, rewrite it {perspective_text}, {style_text}. Also extract the category, location, and timestamp.
+            Compared to the user's input, your rewritten text should be {verbosity_text}.
             If the exact date is unknown, please estimate the month and year based on context clues
             or use the current date if no time information is available.
 
@@ -68,8 +100,10 @@ class KnowledgeManagement:
             }}
             """
 
+            logger.debug(f"Using temperature {temperature} for style {narrator_style}")
+
             response = client.chat.completions.create(
-                model="gpt-4-1106-preview",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -78,7 +112,7 @@ class KnowledgeManagement:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.3
+                temperature=temperature
             )
 
             result = response.choices[0].message.content
@@ -89,7 +123,7 @@ class KnowledgeManagement:
                 classification.timestamp = datetime.now().strftime("%Y-%m-%d")
 
             classification.timestamp = classification.timestamp.replace("-XX", "-01")
-            
+
             logger.info(f"Memory classification complete: {classification}")
             return classification
 

@@ -101,6 +101,7 @@ class EmpatheticInterviewer:
         except Exception as e:
             logger.error(f"Error starting interview session: {str(e)}")
             raise Exception(f"Failed to start interview session: {str(e)}")
+            
     async def process_interview_response(
         self,
         profile_id: UUID,
@@ -112,22 +113,43 @@ class EmpatheticInterviewer:
         Process a response from the interviewee and generate the next question.
         """
         try:
-            # First, analyze if the response is a memory and classify it
+            # First, get profile settings
+            profile_result = self.supabase.table("users").select("profile").eq(
+                "id", str(profile_id)
+            ).execute()
+
+            if not profile_result.data:
+                raise Exception("Profile not found")
+
+            profile_settings = profile_result.data[0].get("profile", {})
+
+            # Get narrative settings with defaults
+            narrator_perspective = profile_settings.get("narrator_perspective", "ego")
+            narrator_style = profile_settings.get("narrator_style", "neutral")
+            narrator_verbosity = profile_settings.get("narrator_verbosity", "normal")
+
+            logger.debug(f"Using profile settings - perspective: {narrator_perspective}, style: {narrator_style}, verbosity: {narrator_verbosity}")
+
+            # Analyze if the response is a memory and classify it with profile settings
             classification = await KnowledgeManagement.analyze_response(
-                response_text, 
-                self.openai_client,
-                language
+                response_text=response_text, 
+                client=self.openai_client,
+                language=language,
+                narrator_perspective=narrator_perspective,
+                narrator_style=narrator_style,
+                narrator_verbosity=narrator_verbosity
             )
 
             logger.info("------- Analyzed response -------")
             logger.info(f"is_memory={classification.is_memory} "
-                      f"rewritten_text='{classification.rewritten_text}' "
                       f"category='{classification.category}' "
                       f"location='{classification.location}' "
                       f"timestamp='{classification.timestamp}'")
 
             # If it's a memory, store it
             if classification.is_memory:
+                logger.info(f"rewrittenText='{classification.rewrittenText}'")
+                logger.info(f"narrator_perspective='{narrator_perspective}'")
                 await self.knowledge_manager.store_memory(
                     profile_id,
                     session_id,
