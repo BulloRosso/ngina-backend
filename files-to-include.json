@@ -9,7 +9,8 @@
       "/api/v1/interviews.py",
       "/api/v1/memories.py",
       "/api/v1/profiles.py",
-      "/api/v1/auth.py"
+      "/api/v1/auth.py",
+      "/api/v1/chat.py" 
    ],
    "backend_services": [
       "/services/__init__.py",

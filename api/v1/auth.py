@@ -1,5 +1,6 @@
 # api/v1/auth.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Depends, Header
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from config.jwt import create_access_token
@@ -9,13 +10,76 @@ import bcrypt
 from services.email import EmailService
 import random
 import string
+from config.jwt import decode_token
+import logging
+from typing import Dict, Optional
+import json
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 supabase = create_client(
     supabase_url=os.getenv("SUPABASE_URL"),
     supabase_key=os.getenv("SUPABASE_KEY")
 )
+
+class ProfileUpdate(BaseModel):
+    profile: Dict
+
+async def get_current_user(authorization: str = Header(None)) -> str:
+    """Get current user from authorization header"""
+    if not authorization:
+        logger.error("No authorization header provided")
+        raise HTTPException(
+            status_code=401,
+            detail="No authorization header"
+        )
+
+    try:
+        logger.debug(f"Processing authorization header: {authorization[:20]}...")
+        scheme, token = authorization.split()
+        if scheme.lower() != 'bearer':
+            logger.error(f"Invalid authentication scheme: {scheme}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication scheme"
+            )
+
+        logger.debug("Attempting to decode token...")
+        payload = decode_token(token)
+        if not payload:
+            logger.error("Token decode returned None")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token"
+            )
+
+        user_id = payload.get("sub")
+        if not user_id:
+            logger.error("No user ID in token payload")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token payload"
+            )
+
+        logger.debug(f"Successfully validated token for user: {user_id}")
+        return user_id
+    except ValueError as e:
+        logger.error(f"Invalid authorization header format: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header format"
+        )
+    except Exception as e:
+        logger.error(f"Error validating token: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid token"
+        )
+
 def generate_verification_code():
     return ''.join(random.choices(string.digits, k=8))
     
@@ -217,3 +281,85 @@ async def login(login_data: LoginRequest):  # Use Pydantic model for validation
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
+@router.get("/profile/{user_id}")
+async def get_user_profile(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get user profile settings"""
+    try:
+        logger.debug(f"Getting profile for user ID: {user_id}")
+
+        # Verify user is accessing their own profile
+        if current_user != user_id:
+            logger.warning(f"User {current_user} attempted to access profile of {user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot access another user's profile"
+            )
+
+        result = supabase.table("users").select("profile").eq("id", user_id).execute()
+
+        if not result.data:
+            logger.warning(f"No profile found for user {user_id}")
+            raise HTTPException(status_code=404, detail="User not found")
+
+        profile_data = result.data[0].get("profile", {})
+
+        # Ensure default fields exist
+        profile_data.setdefault("signup_secret", "")
+        profile_data.setdefault("is_validated_by_email", False)
+        profile_data.setdefault("narrator_perspective", "ego")
+        profile_data.setdefault("narrator_verbosity", "normal")
+        profile_data.setdefault("narrator_style", "neutral")
+
+        logger.debug(f"Successfully retrieved profile for user {user_id}")
+        return {"profile": profile_data}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error getting profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/profile")
+async def update_user_profile(
+    profile_update: ProfileUpdate,
+    current_user: str = Depends(get_current_user)
+):
+    """Update user profile settings"""
+    try:
+        logger.info(f"Updating profile for user ID: {current_user}")
+
+        # Get current profile to merge with new settings
+        current_result = supabase.table("users").select("profile").eq("id", current_user).execute()
+
+        if not current_result.data:
+            logger.warning(f"No profile found for user {current_user}")
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_profile = current_result.data[0].get("profile", {})
+
+        # Ensure required fields are preserved
+        updated_profile = {
+            "signup_secret": current_profile.get("signup_secret", ""),
+            "is_validated_by_email": current_profile.get("is_validated_by_email", False),
+            **profile_update.profile
+        }
+
+        # Update profile in database
+        result = supabase.table("users").update(
+            {"profile": updated_profile}
+        ).eq("id", current_user).execute()
+
+        if not result.data:
+            logger.error(f"Failed to update profile for user {current_user}")
+            raise HTTPException(status_code=404, detail="Failed to update profile")
+
+        logger.info(f"Successfully updated profile for user {current_user}")
+        return {"message": "Profile updated successfully", "profile": updated_profile}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error updating profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
