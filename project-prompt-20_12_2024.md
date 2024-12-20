@@ -449,6 +449,7 @@ class InterviewResponse(BaseModel):
     audio_url: Optional[str] = None
     emotions_detected: Optional[List[Emotion]] = None
     session_id: Optional[UUID] = None  
+    user_id: UUID
 
 class InterviewQuestion(BaseModel):
     text: str
@@ -584,6 +585,7 @@ async def process_response(
     try:
         interviewer = EmpatheticInterviewer()
         return await interviewer.process_interview_response(
+            user_id=response.user_id,
             profile_id=profile_id,
             session_id=session_id,
             response_text=response.text,
@@ -1019,7 +1021,8 @@ async def delete_profile(profile_id: UUID):
 ### api/v1/auth.py
 ```
 # api/v1/auth.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Depends, Header
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from config.jwt import create_access_token
@@ -1029,13 +1032,76 @@ import bcrypt
 from services.email import EmailService
 import random
 import string
+from config.jwt import decode_token
+import logging
+from typing import Dict, Optional
+import json
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 supabase = create_client(
     supabase_url=os.getenv("SUPABASE_URL"),
     supabase_key=os.getenv("SUPABASE_KEY")
 )
+
+class ProfileUpdate(BaseModel):
+    profile: Dict
+
+async def get_current_user(authorization: str = Header(None)) -> str:
+    """Get current user from authorization header"""
+    if not authorization:
+        logger.error("No authorization header provided")
+        raise HTTPException(
+            status_code=401,
+            detail="No authorization header"
+        )
+
+    try:
+        logger.debug(f"Processing authorization header: {authorization[:20]}...")
+        scheme, token = authorization.split()
+        if scheme.lower() != 'bearer':
+            logger.error(f"Invalid authentication scheme: {scheme}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication scheme"
+            )
+
+        logger.debug("Attempting to decode token...")
+        payload = decode_token(token)
+        if not payload:
+            logger.error("Token decode returned None")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token"
+            )
+
+        user_id = payload.get("sub")
+        if not user_id:
+            logger.error("No user ID in token payload")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token payload"
+            )
+
+        logger.debug(f"Successfully validated token for user: {user_id}")
+        return user_id
+    except ValueError as e:
+        logger.error(f"Invalid authorization header format: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header format"
+        )
+    except Exception as e:
+        logger.error(f"Error validating token: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid token"
+        )
+
 def generate_verification_code():
     return ''.join(random.choices(string.digits, k=8))
     
@@ -1237,6 +1303,88 @@ async def login(login_data: LoginRequest):  # Use Pydantic model for validation
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
+@router.get("/profile/{user_id}")
+async def get_user_profile(
+    user_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Get user profile settings"""
+    try:
+        logger.debug(f"Getting profile for user ID: {user_id}")
+
+        # Verify user is accessing their own profile
+        if current_user != user_id:
+            logger.warning(f"User {current_user} attempted to access profile of {user_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot access another user's profile"
+            )
+
+        result = supabase.table("users").select("profile").eq("id", user_id).execute()
+
+        if not result.data:
+            logger.warning(f"No profile found for user {user_id}")
+            raise HTTPException(status_code=404, detail="User not found")
+
+        profile_data = result.data[0].get("profile", {})
+
+        # Ensure default fields exist
+        profile_data.setdefault("signup_secret", "")
+        profile_data.setdefault("is_validated_by_email", False)
+        profile_data.setdefault("narrator_perspective", "ego")
+        profile_data.setdefault("narrator_verbosity", "normal")
+        profile_data.setdefault("narrator_style", "neutral")
+
+        logger.debug(f"Successfully retrieved profile for user {user_id}")
+        return {"profile": profile_data}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error getting profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/profile")
+async def update_user_profile(
+    profile_update: ProfileUpdate,
+    current_user: str = Depends(get_current_user)
+):
+    """Update user profile settings"""
+    try:
+        logger.info(f"Updating profile for user ID: {current_user}")
+
+        # Get current profile to merge with new settings
+        current_result = supabase.table("users").select("profile").eq("id", current_user).execute()
+
+        if not current_result.data:
+            logger.warning(f"No profile found for user {current_user}")
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_profile = current_result.data[0].get("profile", {})
+
+        # Ensure required fields are preserved
+        updated_profile = {
+            "signup_secret": current_profile.get("signup_secret", ""),
+            "is_validated_by_email": current_profile.get("is_validated_by_email", False),
+            **profile_update.profile
+        }
+
+        # Update profile in database
+        result = supabase.table("users").update(
+            {"profile": updated_profile}
+        ).eq("id", current_user).execute()
+
+        if not result.data:
+            logger.error(f"Failed to update profile for user {current_user}")
+            raise HTTPException(status_code=404, detail="Failed to update profile")
+
+        logger.info(f"Successfully updated profile for user {current_user}")
+        return {"message": "Profile updated successfully", "profile": updated_profile}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error updating profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 ```
 
 ### api/v1/chat.py
@@ -1809,8 +1957,10 @@ class EmpatheticInterviewer:
         except Exception as e:
             logger.error(f"Error starting interview session: {str(e)}")
             raise Exception(f"Failed to start interview session: {str(e)}")
+            
     async def process_interview_response(
         self,
+        user_id: UUID,
         profile_id: UUID,
         session_id: UUID,
         response_text: str,
@@ -1820,22 +1970,43 @@ class EmpatheticInterviewer:
         Process a response from the interviewee and generate the next question.
         """
         try:
-            # First, analyze if the response is a memory and classify it
+            # First, get profile settings
+            profile_result = self.supabase.table("users").select("profile").eq(
+                "id", str(user_id)
+            ).execute()
+
+            if not profile_result.data:
+                raise Exception(f"Profile not found {user_id}")
+
+            profile_settings = profile_result.data[0].get("profile", {})
+
+            # Get narrative settings with defaults
+            narrator_perspective = profile_settings.get("narrator_perspective", "ego")
+            narrator_style = profile_settings.get("narrator_style", "neutral")
+            narrator_verbosity = profile_settings.get("narrator_verbosity", "normal")
+
+            logger.debug(f"Using profile settings - perspective: {narrator_perspective}, style: {narrator_style}, verbosity: {narrator_verbosity}")
+
+            # Analyze if the response is a memory and classify it with profile settings
             classification = await KnowledgeManagement.analyze_response(
-                response_text, 
-                self.openai_client,
-                language
+                response_text=response_text, 
+                client=self.openai_client,
+                language=language,
+                narrator_perspective=narrator_perspective,
+                narrator_style=narrator_style,
+                narrator_verbosity=narrator_verbosity
             )
 
             logger.info("------- Analyzed response -------")
             logger.info(f"is_memory={classification.is_memory} "
-                      f"rewritten_text='{classification.rewritten_text}' "
                       f"category='{classification.category}' "
                       f"location='{classification.location}' "
                       f"timestamp='{classification.timestamp}'")
 
             # If it's a memory, store it
             if classification.is_memory:
+                logger.info(f"rewrittenText='{classification.rewritten_text}'")
+                logger.info(f"narrator_perspective='{narrator_perspective}'")
                 await self.knowledge_manager.store_memory(
                     profile_id,
                     session_id,
@@ -2046,6 +2217,41 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
+            # Get narrator settings from user profile
+            user_result = self.supabase.table("users").select("profile").eq("id", str(profile_id)).execute()
+            user_profile = user_result.data[0].get("profile", {}) if user_result.data else {}
+
+            # Get narrative settings with defaults
+            narrator_perspective = user_profile.get("narrator_perspective", "ego")
+            narrator_style = user_profile.get("narrator_style", "neutral")
+            narrator_verbosity = user_profile.get("narrator_verbosity", "normal")
+
+            # Convert perspective setting to prompt text
+            perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
+
+            # Convert style setting to prompt text
+            style_text = {
+                "professional": "using a clear and professional tone",
+                "romantic": "using a warm and emotional tone",
+                "optimistic": "using a positive and uplifting tone",
+                "neutral": "using a balanced and neutral tone"
+            }.get(narrator_style, "using a neutral tone")
+
+            # Convert verbosity setting to prompt text
+            verbosity_text = {
+                "verbose": "more detailed and elaborate",
+                "normal": "similar in length",
+                "brief": "more concise and focused"
+            }.get(narrator_verbosity, "similar in length")
+
+            # Set temperature based on style
+            temperature = {
+                "professional": 0.1,
+                "neutral": 0.3
+            }.get(narrator_style, 0.7)
+
+            logger.debug(f"Using narrative settings - perspective: {perspective_text}, style: {style_text}, verbosity: {verbosity_text}, temperature: {temperature}")
+            
             # Parse and create additional memories using the SAME session_id
             try:
                 response = self.openai_client.chat.completions.create(
@@ -2056,6 +2262,10 @@ class ProfileService:
                             "content": f"""Extract distinct memories from the backstory and format them as a JSON object.
                             The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
                             Write all text content in {language} language.
+
+                            Format each memory {perspective_text}, {style_text}. 
+                            Compared to the source text, your description should be {verbosity_text}.
+
                             For each memory in the "memories" array, provide:
                             {{
                                 "description": "Full description of the memory in {language}",
@@ -2074,7 +2284,8 @@ class ProfileService:
                             "content": f"Please analyze this text and return the memories as JSON: {backstory}"
                         }
                     ],
-                    response_format={ "type": "json_object" }
+                    response_format={ "type": "json_object" },
+                    temperature=temperature
                 )
 
                 try:
@@ -2385,14 +2596,46 @@ class KnowledgeManagement:
     def __init__(self):
         self.memory_service = MemoryService()
     
+    # In services/knowledgemanagement.py
     @staticmethod
-    async def analyze_response(response_text: str, client, language: str = "en") -> MemoryClassification:
-        """Analyze user response to classify and enhance memory content"""
+    async def analyze_response(
+        response_text: str, 
+        client, 
+        language: str = "en",
+        narrator_perspective: str = "ego",
+        narrator_style: str = "neutral",
+        narrator_verbosity: str = "normal"
+    ) -> MemoryClassification:
+        """Analyze user response to classify and enhance memory content with profile settings"""
         try:
-            # Update the prompt to handle unknown dates and locations better
+            # Convert perspective setting to prompt text
+            perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
+
+            # Convert style setting to prompt text
+            style_text = {
+                "professional": "using a clear and professional tone",
+                "romantic": "using a warm and emotional tone",
+                "optimistic": "using a positive and uplifting tone",
+                "neutral": "using a balanced and neutral tone"
+            }.get(narrator_style, "using a neutral tone")
+
+            # Convert verbosity setting to prompt text
+            verbosity_text = {
+                "verbose": "more detailed and elaborate",
+                "normal": "similar in length",
+                "brief": "more concise and focused"
+            }.get(narrator_verbosity, "similar in length")
+
+            # Set temperature based on style
+            temperature = {
+                "professional": 0.1,
+                "neutral": 0.3
+            }.get(narrator_style, 0.7)
+
+            # Build the prompt
             prompt = f"""Analyze the following text and classify it as a memory or not. 
-            If it is a memory, rewrite it in complete sentences using a friendly and optimistic tone, 
-            in first person view. Also extract the category, location, and timestamp.
+            If it is a memory, rewrite it {perspective_text}, {style_text}. Also extract the category, location, and timestamp.
+            Compared to the user's input, your rewritten text should be {verbosity_text}.
             If the exact date is unknown, please estimate the month and year based on context clues
             or use the current date if no time information is available.
 
@@ -2410,8 +2653,10 @@ class KnowledgeManagement:
             }}
             """
 
+            logger.debug(f"Using temperature {temperature} for style {narrator_style}")
+
             response = client.chat.completions.create(
-                model="gpt-4-1106-preview",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -2420,7 +2665,7 @@ class KnowledgeManagement:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.3
+                temperature=temperature
             )
 
             result = response.choices[0].message.content
@@ -2431,7 +2676,7 @@ class KnowledgeManagement:
                 classification.timestamp = datetime.now().strftime("%Y-%m-%d")
 
             classification.timestamp = classification.timestamp.replace("-XX", "-01")
-            
+
             logger.info(f"Memory classification complete: {classification}")
             return classification
 
@@ -2762,6 +3007,41 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
+            # Get narrator settings from user profile
+            user_result = self.supabase.table("users").select("profile").eq("id", str(profile_id)).execute()
+            user_profile = user_result.data[0].get("profile", {}) if user_result.data else {}
+
+            # Get narrative settings with defaults
+            narrator_perspective = user_profile.get("narrator_perspective", "ego")
+            narrator_style = user_profile.get("narrator_style", "neutral")
+            narrator_verbosity = user_profile.get("narrator_verbosity", "normal")
+
+            # Convert perspective setting to prompt text
+            perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
+
+            # Convert style setting to prompt text
+            style_text = {
+                "professional": "using a clear and professional tone",
+                "romantic": "using a warm and emotional tone",
+                "optimistic": "using a positive and uplifting tone",
+                "neutral": "using a balanced and neutral tone"
+            }.get(narrator_style, "using a neutral tone")
+
+            # Convert verbosity setting to prompt text
+            verbosity_text = {
+                "verbose": "more detailed and elaborate",
+                "normal": "similar in length",
+                "brief": "more concise and focused"
+            }.get(narrator_verbosity, "similar in length")
+
+            # Set temperature based on style
+            temperature = {
+                "professional": 0.1,
+                "neutral": 0.3
+            }.get(narrator_style, 0.7)
+
+            logger.debug(f"Using narrative settings - perspective: {perspective_text}, style: {style_text}, verbosity: {verbosity_text}, temperature: {temperature}")
+            
             # Parse and create additional memories using the SAME session_id
             try:
                 response = self.openai_client.chat.completions.create(
@@ -2772,6 +3052,10 @@ class ProfileService:
                             "content": f"""Extract distinct memories from the backstory and format them as a JSON object.
                             The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
                             Write all text content in {language} language.
+
+                            Format each memory {perspective_text}, {style_text}. 
+                            Compared to the source text, your description should be {verbosity_text}.
+
                             For each memory in the "memories" array, provide:
                             {{
                                 "description": "Full description of the memory in {language}",
@@ -2790,7 +3074,8 @@ class ProfileService:
                             "content": f"Please analyze this text and return the memories as JSON: {backstory}"
                         }
                     ],
-                    response_format={ "type": "json_object" }
+                    response_format={ "type": "json_object" },
+                    temperature=temperature
                 )
 
                 try:

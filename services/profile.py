@@ -31,6 +31,10 @@ class ProfileService:
         try:
             logger.info(f"Parsing backstory for profile {profile_id} in language {language}")
 
+            # Create profile context string
+            pronoun = "him" if profile_data["gender"].lower() == "male" else "her"
+            profile_context = f"The main character of our memories is {profile_data['first_name']} {profile_data['last_name']} which is of {profile_data['gender']} gender. When rewriting memories reference to {pronoun} as {profile_data['first_name']}."
+
             # Create single session for all initial memories
             session_data = {
                 "id": str(uuid4()),
@@ -128,6 +132,8 @@ class ProfileService:
                             "content": f"""Extract distinct memories from the backstory and format them as a JSON object.
                             The date is a single string in the format "YYYY-MM-DD". If it is a timespan always use the start date.
                             Write all text content in {language} language.
+
+                            {profile_context}
 
                             Format each memory {perspective_text}, {style_text}. 
                             Compared to the source text, your description should be {verbosity_text}.

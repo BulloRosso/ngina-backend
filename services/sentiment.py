@@ -135,6 +135,7 @@ class EmpatheticInterviewer:
             classification = await KnowledgeManagement.analyze_response(
                 response_text=response_text, 
                 client=self.openai_client,
+                profile_data=profile_data, 
                 language=language,
                 narrator_perspective=narrator_perspective,
                 narrator_style=narrator_style,

@@ -48,6 +48,7 @@ class KnowledgeManagement:
     async def analyze_response(
         response_text: str, 
         client, 
+        profile_data: dict,
         language: str = "en",
         narrator_perspective: str = "ego",
         narrator_style: str = "neutral",
@@ -55,6 +56,10 @@ class KnowledgeManagement:
     ) -> MemoryClassification:
         """Analyze user response to classify and enhance memory content with profile settings"""
         try:
+            # Use profile information
+            pronoun = "him" if profile_data["gender"].lower() == "male" else "her"
+            profile_context = f"The main character of our memories is {profile_data['first_name']} {profile_data['last_name']} which is of {profile_data['gender']} gender. When rewriting memories reference to {pronoun} as {profile_data['first_name']}."
+
             # Convert perspective setting to prompt text
             perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
 
@@ -81,6 +86,9 @@ class KnowledgeManagement:
 
             # Build the prompt
             prompt = f"""Analyze the following text and classify it as a memory or not. 
+
+            {profile_context}
+             
             If it is a memory, rewrite it {perspective_text}, {style_text}. Also extract the category, location, and timestamp.
             Compared to the user's input, your rewritten text should be {verbosity_text}.
             If the exact date is unknown, please estimate the month and year based on context clues
