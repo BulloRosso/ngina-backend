@@ -45,8 +45,14 @@ async def create_profile(
 ):
     try:
         profile_data = json.loads(profile)
+        
         first_name = profile_data.get("first_name")
         last_name = profile_data.get("last_name")
+        user_id = profile_data.get("user_id")
+        
+        if not first_name or not last_name or not user_id:  # Update validation
+            raise ValueError("first_name, last_name, and user_id are required.")
+        
         profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
 
         if not first_name or not last_name:

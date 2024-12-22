@@ -291,6 +291,7 @@ class ProfileService:
                 "spoken_languages": profile_data.spoken_languages,
                 "profile_image_url": profile_data.profile_image_url,
                 "metadata": metadata,
+                "user_id": str(profile_data.user_id),
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }

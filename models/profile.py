@@ -13,6 +13,7 @@ class ProfileCreate(BaseModel):
     spoken_languages: List[str] = []
     profile_image_url: Optional[str]
     metadata: Optional[Dict[str, Any]] = {}
+    user_id: UUID4 
 
 class Profile(ProfileCreate):
     id: UUID4

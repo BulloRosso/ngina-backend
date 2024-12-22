@@ -280,25 +280,37 @@ class MemoryService:
         try:
             logger.debug(f"Adding media to memory {memory_id}")
             instance = cls.get_instance()
-
-            # Verify memory exists
+    
+            # First get the memory to verify it exists and get profile_id
             memory = instance.supabase.table(cls.table_name)\
-                .select("image_urls")\
+                .select("*")\
                 .eq("id", str(memory_id))\
                 .execute()
-
+    
             if not memory.data:
                 raise Exception("Memory not found")
-
+    
+            profile_id = memory.data[0].get('profile_id')
+    
+            # Get user_id from profiles table
+            profile = instance.supabase.table("profiles")\
+                .select("user_id")\
+                .eq("id", profile_id)\
+                .execute()
+    
+            if not profile.data:
+                raise Exception("Profile not found")
+    
+            user_id = profile.data[0].get('user_id')
             current_urls = memory.data[0].get('image_urls', [])
             new_urls = []
-
+    
             for idx, (file_content, content_type) in enumerate(zip(files, content_types)):
                 try:
-                    # Generate unique filename
+                    # Generate unique filename including user_id in path
                     file_ext = "jpg" if "jpeg" in content_type.lower() else "png"
-                    filename = f"{memory_id}/{uuid.uuid4()}.{file_ext}"
-
+                    filename = f"{user_id}/{memory_id}/{uuid.uuid4()}.{file_ext}"
+    
                     # Upload to Supabase Storage
                     result = instance.supabase.storage\
                         .from_(cls.storage_bucket)\
@@ -307,34 +319,43 @@ class MemoryService:
                             file=file_content,
                             file_options={"content-type": content_type}
                         )
-
+    
                     if hasattr(result, 'error') and result.error:
                         raise Exception(f"Upload error: {result.error}")
-
-                    # Get public URL
-                    url = instance.supabase.storage\
+    
+                    # Get public URL with signed URL
+                    signed_url = instance.supabase.storage\
                         .from_(cls.storage_bucket)\
-                        .get_public_url(filename)
-
-                    new_urls.append(url)
-
+                        .create_signed_url(
+                            path=filename,
+                            expires_in=31536000  # 1 year in seconds
+                        )
+    
+                    if 'signedURL' in signed_url:
+                        new_urls.append(signed_url['signedURL'])
+                    else:
+                        public_url = instance.supabase.storage\
+                            .from_(cls.storage_bucket)\
+                            .get_public_url(filename)
+                        new_urls.append(public_url)
+    
                 except Exception as e:
                     logger.error(f"Error uploading file {idx}: {str(e)}")
                     continue
-
+    
             # Update memory with new URLs
             updated_urls = current_urls + new_urls
             update_result = instance.supabase.table(cls.table_name)\
                 .update({"image_urls": updated_urls})\
                 .eq("id", str(memory_id))\
                 .execute()
-
+    
             return {
                 "message": "Media added successfully",
                 "urls": new_urls,
                 "total_urls": len(updated_urls)
             }
-
+    
         except Exception as e:
             logger.error(f"Error adding media: {str(e)}")
             logger.error(traceback.format_exc())
