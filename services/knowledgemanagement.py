@@ -17,7 +17,7 @@ import neo4j
 from neo4j_graphrag.llm import OpenAILLM as LLM
 from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
-from neo4j_graphrag.retrievers import VectorRetriever
+from neo4j_graphrag.retrievers import HybridRetriever
 from neo4j_graphrag.generation.graphrag import GraphRAG
 from neo4j_graphrag.experimental.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
 import os
@@ -310,3 +310,37 @@ class KnowledgeManagement:
         logger.info(f"...> RAG pipeline execution time: {execution_time} seconds")
         
         return ""
+
+    async def query_with_rag(self, query_text: str) -> str:
+        """
+        Query the knowledge graph using RAG and return the answer.
+        """
+        try:
+            logger.info("Initializing GraphRAG for query")
+            neo4j_driver = neo4j.GraphDatabase.driver(
+                NEO4J_URI,
+                auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+            )
+    
+            embedder = Embeddings()
+    
+            hybrid_retriever = HybridRetriever(
+                neo4j_driver,
+                fulltext_index_name="fulltext_index_noblivion",
+                vector_index_name="vector_index_noblivion",
+                embedder=embedder
+            )
+    
+            llm = LLM(model_name="gpt-4o-mini")
+            rag = GraphRAG(llm=llm, retriever=hybrid_retriever)
+    
+            # Get response
+            logger.debug(f"Executing RAG query: {query_text}")
+            response = rag.search(query_text=query_text)
+            logger.debug(f"Generated response: {response.answer}")
+    
+            return response.answer
+    
+        except Exception as e:
+            logger.error(f"Error processing RAG query: {str(e)}")
+            raise Exception(f"Failed to process RAG query: {str(e)}")
