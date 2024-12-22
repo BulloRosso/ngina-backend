@@ -36,7 +36,65 @@ async def list_profiles() -> List[Profile]:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch profiles: {str(e)}")
-            
+        
+@router.get("/user/{user_id}")
+async def get_profiles_for_user(user_id: UUID) -> List[Profile]:
+    """Get all profiles for a specific user"""
+    try:
+        service = ProfileService()
+
+        # Get profiles only for the specified user
+        result = service.supabase.table("profiles")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .order('updated_at', desc=True)\
+            .execute()
+
+        profiles = []
+        for profile_data in result.data:
+            try:
+                # Convert date strings
+                if isinstance(profile_data['date_of_birth'], str):
+                    profile_data['date_of_birth'] = datetime.fromisoformat(
+                        profile_data['date_of_birth']
+                    ).date()
+
+                if isinstance(profile_data['created_at'], str):
+                    profile_data['created_at'] = datetime.fromisoformat(
+                        profile_data['created_at']
+                    )
+
+                if isinstance(profile_data['updated_at'], str):
+                    profile_data['updated_at'] = datetime.fromisoformat(
+                        profile_data['updated_at']
+                    )
+
+                # Add session count to metadata
+                session_count_result = service.supabase.table('interview_sessions')\
+                    .select('id', count='exact')\
+                    .eq('profile_id', profile_data['id'])\
+                    .execute()
+
+                if not profile_data.get('metadata'):
+                    profile_data['metadata'] = {}
+
+                profile_data['metadata']['session_count'] = session_count_result.count
+
+                profiles.append(Profile(**profile_data))
+            except Exception as e:
+                logger.error(f"Error converting profile data: {str(e)}")
+                logger.error(f"Problematic profile data: {profile_data}")
+                continue
+
+        return profiles
+
+    except Exception as e:
+        logger.error(f"Error fetching user profiles: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch user profiles: {str(e)}"
+        )
+
 @router.post("")
 async def create_profile(
     profile_image: UploadFile = File(...),
