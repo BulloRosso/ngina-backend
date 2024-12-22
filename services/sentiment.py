@@ -178,7 +178,7 @@ class EmpatheticInterviewer:
             else:
                 # Use RAG for non-memory responses
                 logger.info("Using RAG for non-memory response")
-                next_question = await self.knowledge_manager.query_with_rag(response_text)
+                next_question = await self.knowledge_manager.query_with_rag(response_text, str(profile_id))
             
             # Return default sentiment values instead of analyzing
             default_sentiment = {

@@ -25,7 +25,7 @@ async def process_chat_message(query: ChatQuery):
 
         # Initialize knowledge management and use RAG
         knowledge_manager = KnowledgeManagement()
-        answer = await knowledge_manager.query_with_rag(query.query_text)
+        answer = await knowledge_manager.query_with_rag(query.query_text, str(query.profile_id))
 
         logger.debug(f"Generated response: {answer}")
         return ChatResponse(answer=answer)

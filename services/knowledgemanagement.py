@@ -17,7 +17,7 @@ import neo4j
 from neo4j_graphrag.llm import OpenAILLM as LLM
 from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
-from neo4j_graphrag.retrievers import HybridRetriever
+from neo4j_graphrag.retrievers import HybridCypherRetriever
 from neo4j_graphrag.generation.graphrag import GraphRAG
 from neo4j_graphrag.experimental.components.types import (
     LexicalGraphConfig
@@ -318,7 +318,7 @@ class KnowledgeManagement:
         
         return ""
 
-    async def query_with_rag(self, query_text: str) -> str:
+    async def query_with_rag(self, query_text: str, profile_id) -> str:
         """
         Query the knowledge graph using RAG and return the answer.
         """
@@ -330,12 +330,16 @@ class KnowledgeManagement:
             )
     
             embedder = Embeddings()
-    
-            hybrid_retriever = HybridRetriever(
+
+            # Limit the query to match only nodes for the profile
+            retrieval_query = "MATCH (n:Chunk)" f"WHERE n.id STARTS WITH 'noblivion_{profile_id}'" "RETURN n"
+            
+            hybrid_retriever = HybridCypherRetriever(
                 neo4j_driver,
-                fulltext_index_name="fulltext_index_noblivion",
-                vector_index_name="vector_index_noblivion",
-                embedder=embedder
+                "vector_index_noblivion",
+                "fulltext_index_noblivion",
+                retrieval_query,
+                embedder
             )
     
             llm = LLM(model_name="gpt-4o-mini")
