@@ -14,6 +14,7 @@ from models.memory import (
 )
 from services.memory import MemoryService
 import neo4j
+from neo4j import GraphDatabase
 from neo4j_graphrag.llm import OpenAILLM as LLM
 from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
@@ -144,6 +145,61 @@ class KnowledgeManagement:
             logger.error(f"Error analyzing response: {str(e)}")
             raise
 
+    async def delete_memory(self, profile_id: str, memory_id: str) -> bool:
+        """
+        Delete a memory node and its relationships from Neo4j.
+        Args:
+            profile_id: The profile ID
+            memory_id: The memory ID
+        Returns:
+            bool: True if deletion was successful
+        """
+        driver = None
+        session = None
+        try:
+            # Construct the node ID
+            node_id = f"noblivion_{profile_id}_{memory_id}"
+
+            # Create Neo4j driver
+            driver = neo4j.GraphDatabase.driver(
+                NEO4J_URI,
+                auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+            )
+
+            # Create session
+            session = driver.session()
+
+            # Define the Cypher query
+            cypher_query = """
+            MATCH (n:Chunk)
+            WHERE n.id STARTS WITH $node_id
+            DETACH DELETE n
+            """
+
+            try:
+                # Execute the query synchronously
+                session.run(
+                    cypher_query,
+                    node_id=node_id
+                )
+                logger.info(f"Successfully deleted nodes with ID pattern: {node_id}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error executing Neo4j query: {str(e)}")
+                raise
+
+        except Exception as e:
+            logger.error(f"Error in delete_memory: {str(e)}")
+            raise
+
+        finally:
+            # Clean up resources
+            if session:
+                session.close()
+            if driver:
+                driver.close()
+        
     async def store_memory(self, profile_id: UUID, session_id: UUID, classification: MemoryClassification) -> Optional[Memory]:
         """
         Store classified memory in both Supabase and Neo4j (future implementation)
@@ -342,12 +398,19 @@ class KnowledgeManagement:
                 embedder
             )
     
-            llm = LLM(model_name="gpt-4o-mini")
+            llm = LLM(
+                model_name="gpt-4o-mini",
+                model_params={
+                    "max_tokens": 2000,  # Limit output tokens
+                    "temperature": 0.2
+                }
+            )
             rag = GraphRAG(llm=llm, retriever=hybrid_retriever)
     
             # Get response
             logger.debug(f"Executing RAG query: {query_text}")
-            response = rag.search(query_text=query_text)
+            response = rag.search(query_text=query_text, 
+                                  retriever_config= { 'top_k': 5 })
             logger.debug(f"Generated response: {response.answer}")
     
             return response.answer

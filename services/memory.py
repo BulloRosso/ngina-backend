@@ -4,6 +4,7 @@ from uuid import UUID
 from models.memory import MemoryCreate
 from supabase import create_client, Client
 import os
+import asyncio
 from datetime import datetime
 import logging
 import traceback
@@ -25,6 +26,7 @@ class MemoryService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
+        
     @classmethod
     async def delete_memory(cls, memory_id: UUID) -> bool:
         """Delete a memory by ID"""
@@ -32,6 +34,22 @@ class MemoryService:
             logger.debug(f"Attempting to delete memory with ID: {memory_id}")
             instance = cls.get_instance()
 
+            # First, get the profile_id from the memory
+            memory_result = instance.supabase.table(cls.table_name).select(
+                "profile_id"
+            ).eq(
+                "id", str(memory_id)
+            ).execute()
+
+            if not memory_result.data:
+                logger.warning(f"No memory found with ID {memory_id} during profile_id lookup for delete")
+                return False
+
+            profile_id = memory_result.data[0].get('profile_id')
+            if not profile_id:
+                logger.warning(f"Memory {memory_id} has no profile_id")
+                return False
+            
             # Delete the memory from Supabase
             result = instance.supabase.table(cls.table_name).delete().eq(
                 "id", str(memory_id)
@@ -44,6 +62,13 @@ class MemoryService:
                 logger.warning(f"No memory found with ID {memory_id}")
                 return False
 
+            # Import KnowledgeManagement here to avoid circular import
+            from services.knowledgemanagement import KnowledgeManagement
+            
+            # Delete the memory from neo4j 
+            km = KnowledgeManagement()
+            asyncio.create_task(km.delete_memory(str(profile_id), str(memory_id)))
+            
             return True
 
         except Exception as e:
