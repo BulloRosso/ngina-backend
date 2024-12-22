@@ -120,10 +120,18 @@ class EmpatheticInterviewer:
             ).execute()
 
             if not profile_result.data:
-                raise Exception(f"Profile not found {user_id}")
+                raise Exception(f"User not found {user_id}")
 
             profile_settings = profile_result.data[0].get("profile", {})
 
+            # Second, fetch the profile
+            profile_basics = self.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
+
+            if not profile_basics.data:
+                raise Exception("Profile not found")
+
+            profile_data = profile_basics.data[0]
+            
             # Get narrative settings with defaults
             narrator_perspective = profile_settings.get("narrator_perspective", "ego")
             narrator_style = profile_settings.get("narrator_style", "neutral")
@@ -148,32 +156,43 @@ class EmpatheticInterviewer:
                       f"location='{classification.location}' "
                       f"timestamp='{classification.timestamp}'")
 
+            # Initialize memory_id as None
+            memory_id = None
+            
             # If it's a memory, store it
             if classification.is_memory:
                 logger.info(f"rewrittenText='{classification.rewritten_text}'")
                 logger.info(f"narrator_perspective='{narrator_perspective}'")
-                await self.knowledge_manager.store_memory(
+                memory_id = await self.knowledge_manager.store_memory(
                     profile_id,
                     session_id,
                     classification
                 )
-                
-            # Analyze sentiment
-            sentiment = await self._analyze_sentiment(
-                classification.rewritten_text if classification.is_memory else response_text
-            )
-
-            # Generate follow-up question based on the processed response
-            next_question = await self.generate_next_question(
-                profile_id, 
-                session_id,
-                language
-            )
+               
+                # Generate follow-up question based on the processed response
+                next_question = await self.generate_next_question(
+                    profile_id, 
+                    session_id,
+                    language
+                )
+            else:
+                # Use RAG for non-memory responses
+                logger.info("Using RAG for non-memory response")
+                next_question = await self.knowledge_manager.query_with_rag(response_text)
+            
+            # Return default sentiment values instead of analyzing
+            default_sentiment = {
+                "joy": 0.5,
+                "sadness": 0.0,
+                "nostalgia": 0.5,
+                "intensity": 0.5
+            }
 
             return {
-                "sentiment": sentiment,
+                "sentiment": default_sentiment,
                 "follow_up": next_question,
-                "is_memory": classification.is_memory
+                "is_memory": classification.is_memory,
+                "memory_id": memory_id
             }
 
         except Exception as e:
@@ -182,7 +201,7 @@ class EmpatheticInterviewer:
                 "sentiment": {"joy": 0.5, "nostalgia": 0.5},
                 "follow_up": "Can you tell me more about that?",
                 "is_memory": False,
-                "memory_id": memory.id if memory else None
+                "memory_id": None
             }
 
     async def _analyze_sentiment(self, text: str) -> Dict[str, float]:

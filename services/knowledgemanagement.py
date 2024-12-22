@@ -19,6 +19,9 @@ from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 from neo4j_graphrag.retrievers import HybridRetriever
 from neo4j_graphrag.generation.graphrag import GraphRAG
+from neo4j_graphrag.experimental.components.types import (
+    LexicalGraphConfig
+)
 from neo4j_graphrag.experimental.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
 import os
 import asyncio
@@ -93,6 +96,8 @@ class KnowledgeManagement:
             Compared to the user's input, your rewritten text should be {verbosity_text}.
             If the exact date is unknown, please estimate the month and year based on context clues
             or use the current date if no time information is available.
+
+            If the user asks a question, it is never classified as a memory.
 
             IMPORTANT: Keep the response in the original language ({language}).
 
@@ -173,23 +178,23 @@ class KnowledgeManagement:
             }
 
             # Store in Supabase
-            stored_memory = await MemoryService.create_memory(
+            stored_memory_id = await MemoryService.create_memory(
                 MemoryCreate(**memory_data),
                 profile_id,
                 session_id
             )
 
             # in the background: store in Neo4j knowledge graph (vector and graph search)
-            asyncio.create_task(self.append_to_rag(classification.rewritten_text, classification.category, classification.location))
+            asyncio.create_task(self.append_to_rag(classification.rewritten_text, profile_id, stored_memory_id, classification.category, classification.location))
 
-            logger.info(f"Memory stored successfully")
-            return stored_memory
+            logger.info(f"Memory stored successfully as " + stored_memory_id)
+            return stored_memory_id
 
         except Exception as e:
             logger.error(f"Error storing memory: {str(e)}")
             raise
             
-    async def append_to_rag(self, memory_text, category, location):
+    async def append_to_rag(self, memory_text, profile_id, memory_id, category, location):
 
         neo4j_driver = neo4j.GraphDatabase.driver(NEO4J_URI,
             auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
@@ -296,6 +301,8 @@ class KnowledgeManagement:
              llm=ex_llm,
              driver=neo4j_driver,
              embedder=embedder,
+             lexical_graph_config= LexicalGraphConfig(id_prefix=f'noblivion_{profile_id}_{memory_id}', 
+                                                      document_node_label='memory_node' ),
              relations=relations_noblivion,
              entities=entities_noblivion,
              text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=500),

@@ -173,12 +173,15 @@ class MemoryService:
             # Insert into database with error logging
             try:
                 response = instance.supabase.table(cls.table_name).insert(data).execute()
-                logger.debug(f"Supabase response: {response}")
 
                 if not response.data:
                     raise Exception("No data returned from memory creation")
+                    
+                inserted_row = response.data[0]  # Assuming only one row is inserted
+                auto_generated_id = inserted_row.get('id')
 
-                return response.data[0]
+                return auto_generated_id
+                
             except Exception as e:
                 logger.error(f"Error inserting into database: {str(e)}")
                 logger.error(traceback.format_exc())
