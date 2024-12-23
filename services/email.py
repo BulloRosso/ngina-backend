@@ -107,3 +107,29 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send expiry reminder: {str(e)}")
             raise
+
+    async def send_password_reset_email(self, to_email: str, reset_token: str):
+        """Send password reset email with reset token link."""
+        try:
+            # Read template
+            template_path = Path("templates/password-reset.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+    
+            # Replace placeholders
+            reset_url = f"{os.getenv('FRONTEND_URL')}/reset-password?token={reset_token}"
+            html_content = html_content.replace("{reset_url}", reset_url)
+    
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject="Reset Your Noblivion Password",
+                html_content=html_content
+            )
+    
+            # Send email
+            return self.mailer.send(mail_body)
+    
+        except Exception as e:
+            logger.error(f"Failed to send password reset email: {str(e)}")
+            raise

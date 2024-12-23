@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from config.jwt import create_access_token
 from supabase import create_client
 import os
+from uuid import UUID, uuid4
 import bcrypt
 from services.email import EmailService
 import random
@@ -26,6 +27,13 @@ supabase = create_client(
     supabase_key=os.getenv("SUPABASE_KEY")
 )
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+    
 class ProfileUpdate(BaseModel):
     profile: Dict
 
@@ -363,3 +371,104 @@ async def update_user_profile(
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/request-password-reset")
+async def request_password_reset(request: PasswordResetRequest):
+    """Request a password reset. Sends an email with a reset token."""
+    try:
+        # Check if user exists
+        result = supabase.table("users").select("*").eq("email", request.email).execute()
+        if not result.data:
+            # For security, don't reveal whether the email exists
+            return {"message": "If the email exists, a reset link has been sent."}
+
+        user = result.data[0]
+
+        # Generate reset token (UUID)
+        reset_token = str(uuid4())
+        expires_at = datetime.utcnow() + timedelta(hours=24)
+
+        # Update user profile with reset token and expiry
+        profile = user.get('profile', {})
+        profile['reset_token'] = reset_token
+        profile['reset_token_expires'] = expires_at.isoformat()
+
+        # Update user in database
+        supabase.table("users").update({
+            "profile": profile
+        }).eq("id", user['id']).execute()
+
+        # Send reset email
+        email_service = EmailService()
+        await email_service.send_password_reset_email(
+            to_email=request.email,
+            reset_token=reset_token
+        )
+
+        return {"message": "If the email exists, a reset link has been sent."}
+
+    except Exception as e:
+        logger.error(f"Password reset request error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process password reset request"
+        )
+
+@router.post("/reset-password")
+async def reset_password(request: PasswordResetConfirm):
+    """Reset password using the token from the email."""
+    try:
+        # Find user with this reset token
+        result = supabase.table("users").select("*").execute()
+        user = next(
+            (u for u in result.data if u.get('profile', {}).get('reset_token') == request.token),
+            None
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or expired reset token"
+            )
+
+        # Check if token is expired
+        profile = user.get('profile', {})
+        expiry = profile.get('reset_token_expires')
+        if not expiry:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid reset token"
+            )
+
+        expires_at = datetime.fromisoformat(expiry)
+        if datetime.utcnow() > expires_at:
+            raise HTTPException(
+                status_code=400,
+                detail="Reset token has expired"
+            )
+
+        # Hash new password
+        hashed_password = bcrypt.hashpw(
+            request.new_password.encode('utf-8'),
+            bcrypt.gensalt()
+        ).decode('utf-8')
+
+        # Update password and remove reset token
+        profile.pop('reset_token', None)
+        profile.pop('reset_token_expires', None)
+
+        supabase.table("users").update({
+            "password": hashed_password,
+            "profile": profile
+        }).eq("id", user['id']).execute()
+
+        return {"message": "Password has been reset successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to reset password"
+        )
