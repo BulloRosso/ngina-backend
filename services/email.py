@@ -13,7 +13,17 @@ class EmailService:
     def __init__(self):
         self.api_key = os.getenv('MAILERSEND_API_KEY')
         self.sender_domain = os.getenv('MAILERSEND_SENDER_EMAIL')
+        self.frontend_url = os.getenv('FRONTEND_URL')
+
+        if not self.api_key:
+            raise ValueError("MAILERSEND_API_KEY not found in environment")
+        if not self.sender_domain:
+            raise ValueError("MAILERSEND_SENDER_EMAIL not found in environment")
+        if not self.frontend_url:
+            raise ValueError("FRONTEND_URL not found in environment")
+
         self.mailer = emails.NewEmail(self.api_key)
+        logger.debug(f"Email service initialized with frontend URL: {self.frontend_url}")
 
     def _create_mail_body(
         self,
@@ -22,39 +32,50 @@ class EmailService:
         html_content: str
     ) -> dict:
         """Create a standardized mail body for MailerSend"""
-        mail_body = {}
+        try:
+            # Replace logo URL in template
+            logo_url = f"{self.frontend_url}/conch-logo-small.png"
+            logger.debug(f"Using logo URL: {logo_url}")
+            html_content = html_content.replace("{logo_url}", logo_url)
 
-        # Set sender
-        mail_from = {
-            "name": "Noblivion",
-            "email": self.sender_domain
-        }
-        self.mailer.set_mail_from(mail_from, mail_body)
+            mail_body = {}
 
-        # Set recipient
-        recipients = [
-            {
-                "name": to_email,
-                "email": to_email
+            # Set sender
+            mail_from = {
+                "name": "Noblivion",
+                "email": self.sender_domain
             }
-        ]
-        self.mailer.set_mail_to(recipients, mail_body)
+            self.mailer.set_mail_from(mail_from, mail_body)
 
-        # Set subject
-        self.mailer.set_subject(subject, mail_body)
+            # Set recipient
+            recipients = [
+                {
+                    "name": to_email,
+                    "email": to_email
+                }
+            ]
+            self.mailer.set_mail_to(recipients, mail_body)
 
-        # Set content
-        self.mailer.set_html_content(html_content, mail_body)
+            # Set subject
+            self.mailer.set_subject(subject, mail_body)
 
-        # Create plain text version
-        # Simple conversion - you might want to improve this
-        plain_text = html_content.replace('<br>', '\n').replace('</p>', '\n\n')
-        self.mailer.set_plaintext_content(plain_text, mail_body)
+            # Set content
+            self.mailer.set_html_content(html_content, mail_body)
 
-        return mail_body
+            # Create plain text version
+            plain_text = html_content.replace('<br>', '\n').replace('</p>', '\n\n')
+            self.mailer.set_plaintext_content(plain_text, mail_body)
+
+            return mail_body
+
+        except Exception as e:
+            logger.error(f"Error creating mail body: {str(e)}")
+            raise
+
 
     async def send_interview_invitation(self, to_email: str, profile_name: str, token: str, expires_at: str):
         try:
+            logger.info("Sending interview invitation email")
             # Read template
             template_path = Path("templates/interview-invitation.html")
             with open(template_path, "r") as f:
@@ -75,6 +96,8 @@ class EmailService:
                 subject=f"You're invited to share memories about {profile_name}",
                 html_content=html_content
             )
+
+            logger.info("Sending email to " + to_email)
 
             # Send email
             return self.mailer.send(mail_body)

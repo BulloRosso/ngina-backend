@@ -67,7 +67,7 @@ class InvitationService:
             await self._send_invitation_email(invitation)
 
             # Schedule expiry reminder
-            self._schedule_expiry_reminder(invitation, background_tasks)
+            # self._schedule_expiry_reminder(invitation, background_tasks)
 
             return invitation
 
