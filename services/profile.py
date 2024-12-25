@@ -10,6 +10,7 @@ from models.memory import MemoryCreate, Category, Memory, Location
 from services.memory import MemoryService
 import openai
 from uuid import UUID, uuid4
+from services.usermanagement import UserManagementService
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +88,10 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
-            # Get narrator settings from user profile
-            user_result = self.supabase.table("users").select("profile").eq("id", str(profile_id)).execute()
-            user_profile = user_result.data[0].get("profile", {}) if user_result.data else {}
+            # Get user settings using UserManagementService
+            # user_management = UserManagementService()
+            # user_result = await user_management.get_user_profile(str(profile_id))
+            user_profile = {} # user_result.get('profile', {}) if user_result else {}
 
             # Get narrative settings with defaults
             narrator_perspective = user_profile.get("narrator_perspective", "ego")
@@ -318,7 +320,7 @@ class ProfileService:
 
         except Exception as e:
             logger.error(f"Error creating profile: {str(e)}")
-        raise Exception(f"Failed to create profile: {str(e)}")
+            raise Exception(f"Failed to create profile: {str(e)}")
 
     async def get_profile(self, profile_id: UUID4) -> Optional[Profile]:
         """Retrieves a profile by ID"""

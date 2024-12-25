@@ -475,6 +475,7 @@ class ProfileCreate(BaseModel):
     spoken_languages: List[str] = []
     profile_image_url: Optional[str]
     metadata: Optional[Dict[str, Any]] = {}
+    user_id: UUID4 
 
 class Profile(ProfileCreate):
     id: UUID4
@@ -524,6 +525,7 @@ from .achievements import router as achievements_router
 from .profiles import router as profiles_router
 from .auth  import router as auth_router
 from .chat  import router as chat_router
+from .invitations import router as invitations_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(interviews_router)
@@ -532,6 +534,7 @@ router.include_router(achievements_router)
 router.include_router(profiles_router)
 router.include_router(auth_router)
 router.include_router(chat_router)
+router.include_router(invitations_router)
 ```
 
 ### api/v1/achievements.py
@@ -845,6 +848,9 @@ async def add_media_to_memory(
         )
 ```
 
+### api/v1/invitation.py
+[Content for api/v1/invitation.py not found]
+
 ### api/v1/profiles.py
 ```
 # api/v1/profiles.py
@@ -885,7 +891,65 @@ async def list_profiles() -> List[Profile]:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch profiles: {str(e)}")
-            
+        
+@router.get("/user/{user_id}")
+async def get_profiles_for_user(user_id: UUID) -> List[Profile]:
+    """Get all profiles for a specific user"""
+    try:
+        service = ProfileService()
+
+        # Get profiles only for the specified user
+        result = service.supabase.table("profiles")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .order('updated_at', desc=True)\
+            .execute()
+
+        profiles = []
+        for profile_data in result.data:
+            try:
+                # Convert date strings
+                if isinstance(profile_data['date_of_birth'], str):
+                    profile_data['date_of_birth'] = datetime.fromisoformat(
+                        profile_data['date_of_birth']
+                    ).date()
+
+                if isinstance(profile_data['created_at'], str):
+                    profile_data['created_at'] = datetime.fromisoformat(
+                        profile_data['created_at']
+                    )
+
+                if isinstance(profile_data['updated_at'], str):
+                    profile_data['updated_at'] = datetime.fromisoformat(
+                        profile_data['updated_at']
+                    )
+
+                # Add session count to metadata
+                session_count_result = service.supabase.table('interview_sessions')\
+                    .select('id', count='exact')\
+                    .eq('profile_id', profile_data['id'])\
+                    .execute()
+
+                if not profile_data.get('metadata'):
+                    profile_data['metadata'] = {}
+
+                profile_data['metadata']['session_count'] = session_count_result.count
+
+                profiles.append(Profile(**profile_data))
+            except Exception as e:
+                logger.error(f"Error converting profile data: {str(e)}")
+                logger.error(f"Problematic profile data: {profile_data}")
+                continue
+
+        return profiles
+
+    except Exception as e:
+        logger.error(f"Error fetching user profiles: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch user profiles: {str(e)}"
+        )
+
 @router.post("")
 async def create_profile(
     profile_image: UploadFile = File(...),
@@ -894,8 +958,14 @@ async def create_profile(
 ):
     try:
         profile_data = json.loads(profile)
+        
         first_name = profile_data.get("first_name")
         last_name = profile_data.get("last_name")
+        user_id = profile_data.get("user_id")
+        
+        if not first_name or not last_name or not user_id:  # Update validation
+            raise ValueError("first_name, last_name, and user_id are required.")
+        
         profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
 
         if not first_name or not last_name:
@@ -1021,94 +1091,24 @@ async def delete_profile(profile_id: UUID):
 ### api/v1/auth.py
 ```
 # api/v1/auth.py
-from fastapi import APIRouter, HTTPException, Request, Depends, Header
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.security import OAuth2PasswordBearer
+from typing import Dict, Optional, Any
 from pydantic import BaseModel
-from datetime import datetime, timedelta
-from config.jwt import create_access_token
-from supabase import create_client
-import os
-import bcrypt
-from services.email import EmailService
-import random
-import string
-from config.jwt import decode_token
+from uuid import UUID
 import logging
-from typing import Dict, Optional
-import json
+from services.usermanagement import UserManagementService, UserData
+from dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-supabase = create_client(
-    supabase_url=os.getenv("SUPABASE_URL"),
-    supabase_key=os.getenv("SUPABASE_KEY")
-)
-
-class ProfileUpdate(BaseModel):
-    profile: Dict
-
-async def get_current_user(authorization: str = Header(None)) -> str:
-    """Get current user from authorization header"""
-    if not authorization:
-        logger.error("No authorization header provided")
-        raise HTTPException(
-            status_code=401,
-            detail="No authorization header"
-        )
-
-    try:
-        logger.debug(f"Processing authorization header: {authorization[:20]}...")
-        scheme, token = authorization.split()
-        if scheme.lower() != 'bearer':
-            logger.error(f"Invalid authentication scheme: {scheme}")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid authentication scheme"
-            )
-
-        logger.debug("Attempting to decode token...")
-        payload = decode_token(token)
-        if not payload:
-            logger.error("Token decode returned None")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token"
-            )
-
-        user_id = payload.get("sub")
-        if not user_id:
-            logger.error("No user ID in token payload")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token payload"
-            )
-
-        logger.debug(f"Successfully validated token for user: {user_id}")
-        return user_id
-    except ValueError as e:
-        logger.error(f"Invalid authorization header format: {str(e)}")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid authorization header format"
-        )
-    except Exception as e:
-        logger.error(f"Error validating token: {type(e).__name__}: {str(e)}")
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid token"
-        )
-
-def generate_verification_code():
-    return ''.join(random.choices(string.digits, k=8))
-    
 class LoginRequest(BaseModel):
     email: str
     password: str
-    
+
 class SignupRequest(BaseModel):
     first_name: str
     last_name: str
@@ -1118,273 +1118,171 @@ class SignupRequest(BaseModel):
 class VerificationRequest(BaseModel):
     code: str
     user_id: str
-    
-# api/v1/auth.py
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
 @router.post("/signup")
 async def signup(request: SignupRequest):
     try:
-        # Check if user exists
-        result = supabase.table("users").select("*").eq("email", request.email).execute()
-        if result.data:
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        # Generate verification code
-        verification_code = generate_verification_code()
-
-        # Create user with verification code in profile
-        user_data = {
-            "first_name": request.first_name,
-            "last_name": request.last_name,
-            "email": request.email,
-            "password": bcrypt.hashpw(request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-            "profile": {
-                "signup_secret": verification_code,
-                "is_validated_by_email": False
-            }
-        }
-
-        result = supabase.table("users").insert(user_data).execute()
-        user = result.data[0]
-
-        # Send verification email (synchronously)
-        email_service = EmailService()
-        email_service.send_verification_email(request.email, verification_code)  # Removed await
-
-        # Create access token
-        access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+        service = UserManagementService()
+        user = await service.create_user(UserData(
+            first_name=request.first_name,
+            last_name=request.last_name,
+            email=request.email,
+            password=request.password
+        ))
 
         return {
-            "access_token": access_token,
+            "user": user,
+            "message": "User created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Signup error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/login")
+async def login(login_data: LoginRequest):
+    try:
+        service = UserManagementService()
+        result = await service.login_user(login_data.email, login_data.password)
+
+        return {
+            "access_token": result["access_token"],
             "token_type": "bearer",
             "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "first_name": user["first_name"],
-                "last_name": user["last_name"],
-                "is_validated": False
+                "id": result["id"],
+                "email": result["email"],
+                "first_name": result["first_name"],
+                "last_name": result["last_name"]
             }
         }
     except Exception as e:
-        print(f"Signup error: {str(e)}")  # Add debug logging
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@router.post("/verify-email")
+async def verify_email(verification_data: VerificationRequest):
+    try:
+        service = UserManagementService()
+        verified = await service.verify_email(
+            UUID(verification_data.user_id),
+            verification_data.code
+        )
+        return {"verified": verified}
+    except Exception as e:
+        logger.error(f"Verification error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/validation-status/{user_id}")
 async def check_validation_status(user_id: str):
-    """Check if a user's email is validated"""
     try:
-        # Query user from Supabase
-        result = supabase.table("users").select("profile").eq("id", user_id).execute()
-
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        user = result.data[0]
-        profile = user.get("profile", {})
-
-        # Check validation status from profile JSONB
-        is_validated = profile.get("is_validated_by_email", False)
+        service = UserManagementService()
+        is_validated = await service.check_validation_status(UUID(user_id))
 
         return {
             "is_validated": is_validated,
             "user_id": user_id
         }
-
     except Exception as e:
-        logger.error(f"Error checking validation status: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to check validation status: {str(e)}"
-        )
-        
-@router.post("/verify-email")
-async def verify_email(verification_data: VerificationRequest):
+        logger.error(f"Validation status check error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/request-password-reset")
+async def request_password_reset(request: PasswordResetRequest):
     try:
-        # Get user
-        result = supabase.table("users").select("*").eq(
-            "id", verification_data.user_id
-        ).execute()
+        service = UserManagementService()
+        await service.request_password_reset(request.email)
 
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        user = result.data[0]
-        profile = user.get("profile", {})
-
-        # Check verification code
-        if profile.get("signup_secret") != verification_data.code:
-            return {"verified": False}
-
-        # Update user profile
-        profile["is_validated_by_email"] = True
-        supabase.table("users").update(
-            {"profile": profile}
-        ).eq("id", verification_data.user_id).execute()
-
-        return {"verified": True}
+        # For security, always return success even if email doesn't exist
+        return {"message": "If the email exists, a reset link has been sent."}
     except Exception as e:
-        print(f"Verification error: {str(e)}")  # Add debug logging
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Password reset request error: {str(e)}")
+        return {"message": "If the email exists, a reset link has been sent."}
 
-@router.post("/resend-verification")
-async def resend_verification(user_id: str):
+@router.post("/reset-password")
+async def reset_password(request: PasswordResetConfirm):
     try:
-        # Get user
-        result = supabase.table("users").select("*").eq("id", user_id).execute()
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
+        service = UserManagementService()
+        success = await service.reset_password(request.token, request.new_password)
 
-        user = result.data[0]
+        if not success:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
-        # Generate new verification code
-        verification_code = generate_verification_code()
-
-        # Update user profile
-        profile = user.get("profile", {})
-        profile["signup_secret"] = verification_code
-        supabase.table("users").update({"profile": profile}).eq("id", user_id).execute()
-
-        # Send new verification email
-        email_service = EmailService()
-        await email_service.send_verification_email(user["email"], verification_code)
-
-        return {"success": True}
+        return {"message": "Password has been reset successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/login")
-async def login(login_data: LoginRequest):  # Use Pydantic model for validation
-    try:
-        print(f"Login attempt for email: {login_data.email}")  # Debug logging
-
-        # Get user from Supabase
-        result = supabase.table("users").select("*").eq("email", login_data.email).execute()
-
-        if not result.data:
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid email or password"
-            )
-
-        user = result.data[0]
-
-        # Verify password
-        is_valid = bcrypt.checkpw(
-            login_data.password.encode('utf-8'),
-            user["password"].encode('utf-8')
-        )
-
-        if not is_valid:
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid email or password"
-            )
-
-        # Create access token
-        access_token = create_access_token(
-            data={"sub": user["id"], "email": user["email"]}
-        )
-
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "first_name": user["first_name"],
-                "last_name": user["last_name"]
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Login error: {str(e)}")  # Debug logging
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        logger.error(f"Password reset error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/profile/{user_id}")
 async def get_user_profile(
     user_id: str,
-    current_user: str = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
     """Get user profile settings"""
     try:
-        logger.debug(f"Getting profile for user ID: {user_id}")
-
         # Verify user is accessing their own profile
-        if current_user != user_id:
-            logger.warning(f"User {current_user} attempted to access profile of {user_id}")
+        if str(current_user["id"]) != user_id:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot access another user's profile"
             )
 
-        result = supabase.table("users").select("profile").eq("id", user_id).execute()
+        service = UserManagementService()
+        result = await service.get_user_profile(user_id)
 
-        if not result.data:
-            logger.warning(f"No profile found for user {user_id}")
+        if not result:
             raise HTTPException(status_code=404, detail="User not found")
 
-        profile_data = result.data[0].get("profile", {})
-
-        # Ensure default fields exist
-        profile_data.setdefault("signup_secret", "")
-        profile_data.setdefault("is_validated_by_email", False)
-        profile_data.setdefault("narrator_perspective", "ego")
-        profile_data.setdefault("narrator_verbosity", "normal")
-        profile_data.setdefault("narrator_style", "neutral")
-
-        logger.debug(f"Successfully retrieved profile for user {user_id}")
-        return {"profile": profile_data}
-    except HTTPException as e:
-        raise e
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/profile")
 async def update_user_profile(
-    profile_update: ProfileUpdate,
-    current_user: str = Depends(get_current_user)
+    profile_update: Dict[str, Any],
+    current_user: dict = Depends(get_current_user)
 ):
     """Update user profile settings"""
     try:
-        logger.info(f"Updating profile for user ID: {current_user}")
-
-        # Get current profile to merge with new settings
-        current_result = supabase.table("users").select("profile").eq("id", current_user).execute()
-
-        if not current_result.data:
-            logger.warning(f"No profile found for user {current_user}")
-            raise HTTPException(status_code=404, detail="User not found")
-
-        current_profile = current_result.data[0].get("profile", {})
-
-        # Ensure required fields are preserved
-        updated_profile = {
-            "signup_secret": current_profile.get("signup_secret", ""),
-            "is_validated_by_email": current_profile.get("is_validated_by_email", False),
-            **profile_update.profile
-        }
-
-        # Update profile in database
-        result = supabase.table("users").update(
-            {"profile": updated_profile}
-        ).eq("id", current_user).execute()
-
-        if not result.data:
-            logger.error(f"Failed to update profile for user {current_user}")
-            raise HTTPException(status_code=404, detail="Failed to update profile")
-
-        logger.info(f"Successfully updated profile for user {current_user}")
-        return {"message": "Profile updated successfully", "profile": updated_profile}
-    except HTTPException as e:
-        raise e
+        service = UserManagementService()
+        result = await service.update_user_profile_settings(
+            str(current_user["id"]),
+            profile_update
+        )
+        return result
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
+    try:
+        service = UserManagementService()
+        # Supabase will verify the token and return user info
+        user = await service.get_user_by_id(token)
+
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        return user
+    except Exception as e:
+        logger.error(f"Error getting current user: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 ```
 
 ### api/v1/chat.py
@@ -1393,13 +1291,8 @@ async def update_user_profile(
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from uuid import UUID
-import neo4j
-from neo4j_graphrag.llm import OpenAILLM as LLM
-from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
-from neo4j_graphrag.retrievers import HybridRetriever
-from neo4j_graphrag.generation.graphrag import GraphRAG
-import os
 import logging
+from services.knowledgemanagement import KnowledgeManagement
 
 logger = logging.getLogger(__name__)
 
@@ -1412,31 +1305,6 @@ class ChatQuery(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
 
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-async def get_graph_rag():
-    try:
-        neo4j_driver = neo4j.GraphDatabase.driver(
-            NEO4J_URI,
-            auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
-        )
-
-        embedder = Embeddings()
-
-        hybrid_retriever = HybridRetriever(
-            neo4j_driver,
-            fulltext_index_name="fulltext_index_noblivion",
-            vector_index_name="vector_index_noblivion",
-            embedder=embedder
-        )
-
-        llm = LLM(model_name="gpt-4o-mini")
-        return GraphRAG(llm=llm, retriever=hybrid_retriever)
-    except Exception as e:
-        logger.error(f"Error initializing GraphRAG: {str(e)}")
-        raise
 
 @router.post("", response_model=ChatResponse)
 async def process_chat_message(query: ChatQuery):
@@ -1444,14 +1312,12 @@ async def process_chat_message(query: ChatQuery):
         logger.info(f"Processing chat message for profile {query.profile_id}")
         logger.debug(f"Query text: {query.query_text}")
 
-        # Initialize GraphRAG
-        rag = await get_graph_rag()
+        # Initialize knowledge management and use RAG
+        knowledge_manager = KnowledgeManagement()
+        answer = await knowledge_manager.query_with_rag(query.query_text, str(query.profile_id))
 
-        # Get response
-        response = rag.search(query_text=query.query_text)
-
-        logger.debug(f"Generated response: {response.answer}")
-        return ChatResponse(answer=response.answer)
+        logger.debug(f"Generated response: {answer}")
+        return ChatResponse(answer=answer)
 
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")
@@ -1543,6 +1409,7 @@ from uuid import UUID
 from models.memory import MemoryCreate
 from supabase import create_client, Client
 import os
+import asyncio
 from datetime import datetime
 import logging
 import traceback
@@ -1564,6 +1431,7 @@ class MemoryService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
+        
     @classmethod
     async def delete_memory(cls, memory_id: UUID) -> bool:
         """Delete a memory by ID"""
@@ -1571,6 +1439,22 @@ class MemoryService:
             logger.debug(f"Attempting to delete memory with ID: {memory_id}")
             instance = cls.get_instance()
 
+            # First, get the profile_id from the memory
+            memory_result = instance.supabase.table(cls.table_name).select(
+                "profile_id"
+            ).eq(
+                "id", str(memory_id)
+            ).execute()
+
+            if not memory_result.data:
+                logger.warning(f"No memory found with ID {memory_id} during profile_id lookup for delete")
+                return False
+
+            profile_id = memory_result.data[0].get('profile_id')
+            if not profile_id:
+                logger.warning(f"Memory {memory_id} has no profile_id")
+                return False
+            
             # Delete the memory from Supabase
             result = instance.supabase.table(cls.table_name).delete().eq(
                 "id", str(memory_id)
@@ -1583,6 +1467,13 @@ class MemoryService:
                 logger.warning(f"No memory found with ID {memory_id}")
                 return False
 
+            # Import KnowledgeManagement here to avoid circular import
+            from services.knowledgemanagement import KnowledgeManagement
+            
+            # Delete the memory from neo4j 
+            km = KnowledgeManagement()
+            asyncio.create_task(km.delete_memory(str(profile_id), str(memory_id)))
+            
             return True
 
         except Exception as e:
@@ -1712,12 +1603,15 @@ class MemoryService:
             # Insert into database with error logging
             try:
                 response = instance.supabase.table(cls.table_name).insert(data).execute()
-                logger.debug(f"Supabase response: {response}")
 
                 if not response.data:
                     raise Exception("No data returned from memory creation")
+                    
+                inserted_row = response.data[0]  # Assuming only one row is inserted
+                auto_generated_id = inserted_row.get('id')
 
-                return response.data[0]
+                return auto_generated_id
+                
             except Exception as e:
                 logger.error(f"Error inserting into database: {str(e)}")
                 logger.error(traceback.format_exc())
@@ -1791,25 +1685,37 @@ class MemoryService:
         try:
             logger.debug(f"Adding media to memory {memory_id}")
             instance = cls.get_instance()
-
-            # Verify memory exists
+    
+            # First get the memory to verify it exists and get profile_id
             memory = instance.supabase.table(cls.table_name)\
-                .select("image_urls")\
+                .select("*")\
                 .eq("id", str(memory_id))\
                 .execute()
-
+    
             if not memory.data:
                 raise Exception("Memory not found")
-
+    
+            profile_id = memory.data[0].get('profile_id')
+    
+            # Get user_id from profiles table
+            profile = instance.supabase.table("profiles")\
+                .select("user_id")\
+                .eq("id", profile_id)\
+                .execute()
+    
+            if not profile.data:
+                raise Exception("Profile not found")
+    
+            user_id = profile.data[0].get('user_id')
             current_urls = memory.data[0].get('image_urls', [])
             new_urls = []
-
+    
             for idx, (file_content, content_type) in enumerate(zip(files, content_types)):
                 try:
-                    # Generate unique filename
+                    # Generate unique filename including user_id in path
                     file_ext = "jpg" if "jpeg" in content_type.lower() else "png"
-                    filename = f"{memory_id}/{uuid.uuid4()}.{file_ext}"
-
+                    filename = f"{user_id}/{memory_id}/{uuid.uuid4()}.{file_ext}"
+    
                     # Upload to Supabase Storage
                     result = instance.supabase.storage\
                         .from_(cls.storage_bucket)\
@@ -1818,34 +1724,43 @@ class MemoryService:
                             file=file_content,
                             file_options={"content-type": content_type}
                         )
-
+    
                     if hasattr(result, 'error') and result.error:
                         raise Exception(f"Upload error: {result.error}")
-
-                    # Get public URL
-                    url = instance.supabase.storage\
+    
+                    # Get public URL with signed URL
+                    signed_url = instance.supabase.storage\
                         .from_(cls.storage_bucket)\
-                        .get_public_url(filename)
-
-                    new_urls.append(url)
-
+                        .create_signed_url(
+                            path=filename,
+                            expires_in=31536000  # 1 year in seconds
+                        )
+    
+                    if 'signedURL' in signed_url:
+                        new_urls.append(signed_url['signedURL'])
+                    else:
+                        public_url = instance.supabase.storage\
+                            .from_(cls.storage_bucket)\
+                            .get_public_url(filename)
+                        new_urls.append(public_url)
+    
                 except Exception as e:
                     logger.error(f"Error uploading file {idx}: {str(e)}")
                     continue
-
+    
             # Update memory with new URLs
             updated_urls = current_urls + new_urls
             update_result = instance.supabase.table(cls.table_name)\
                 .update({"image_urls": updated_urls})\
                 .eq("id", str(memory_id))\
                 .execute()
-
+    
             return {
                 "message": "Media added successfully",
                 "urls": new_urls,
                 "total_urls": len(updated_urls)
             }
-
+    
         except Exception as e:
             logger.error(f"Error adding media: {str(e)}")
             logger.error(traceback.format_exc())
@@ -1976,10 +1891,18 @@ class EmpatheticInterviewer:
             ).execute()
 
             if not profile_result.data:
-                raise Exception(f"Profile not found {user_id}")
+                raise Exception(f"User not found {user_id}")
 
             profile_settings = profile_result.data[0].get("profile", {})
 
+            # Second, fetch the profile
+            profile_basics = self.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
+
+            if not profile_basics.data:
+                raise Exception("Profile not found")
+
+            profile_data = profile_basics.data[0]
+            
             # Get narrative settings with defaults
             narrator_perspective = profile_settings.get("narrator_perspective", "ego")
             narrator_style = profile_settings.get("narrator_style", "neutral")
@@ -2004,32 +1927,43 @@ class EmpatheticInterviewer:
                       f"location='{classification.location}' "
                       f"timestamp='{classification.timestamp}'")
 
+            # Initialize memory_id as None
+            memory_id = None
+            
             # If it's a memory, store it
             if classification.is_memory:
                 logger.info(f"rewrittenText='{classification.rewritten_text}'")
                 logger.info(f"narrator_perspective='{narrator_perspective}'")
-                await self.knowledge_manager.store_memory(
+                memory_id = await self.knowledge_manager.store_memory(
                     profile_id,
                     session_id,
                     classification
                 )
-                
-            # Analyze sentiment
-            sentiment = await self._analyze_sentiment(
-                classification.rewritten_text if classification.is_memory else response_text
-            )
-
-            # Generate follow-up question based on the processed response
-            next_question = await self.generate_next_question(
-                profile_id, 
-                session_id,
-                language
-            )
+               
+                # Generate follow-up question based on the processed response
+                next_question = await self.generate_next_question(
+                    profile_id, 
+                    session_id,
+                    language
+                )
+            else:
+                # Use RAG for non-memory responses
+                logger.info("Using RAG for non-memory response")
+                next_question = await self.knowledge_manager.query_with_rag(response_text, str(profile_id))
+            
+            # Return default sentiment values instead of analyzing
+            default_sentiment = {
+                "joy": 0.5,
+                "sadness": 0.0,
+                "nostalgia": 0.5,
+                "intensity": 0.5
+            }
 
             return {
-                "sentiment": sentiment,
+                "sentiment": default_sentiment,
                 "follow_up": next_question,
-                "is_memory": classification.is_memory
+                "is_memory": classification.is_memory,
+                "memory_id": memory_id
             }
 
         except Exception as e:
@@ -2038,7 +1972,7 @@ class EmpatheticInterviewer:
                 "sentiment": {"joy": 0.5, "nostalgia": 0.5},
                 "follow_up": "Can you tell me more about that?",
                 "is_memory": False,
-                "memory_id": memory.id if memory else None
+                "memory_id": None
             }
 
     async def _analyze_sentiment(self, text: str) -> Dict[str, float]:
@@ -2145,6 +2079,7 @@ from models.memory import MemoryCreate, Category, Memory, Location
 from services.memory import MemoryService
 import openai
 from uuid import UUID, uuid4
+from services.usermanagement import UserManagementService
 
 logger = logging.getLogger(__name__)
 
@@ -2222,9 +2157,10 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
-            # Get narrator settings from user profile
-            user_result = self.supabase.table("users").select("profile").eq("id", str(profile_id)).execute()
-            user_profile = user_result.data[0].get("profile", {}) if user_result.data else {}
+            # Get user settings using UserManagementService
+            user_management = UserManagementService()
+            user_result = await user_management.get_user_profile(str(profile_id))
+            user_profile = user_result.get('profile', {}) if user_result else {}
 
             # Get narrative settings with defaults
             narrator_perspective = user_profile.get("narrator_perspective", "ego")
@@ -2426,6 +2362,7 @@ class ProfileService:
                 "spoken_languages": profile_data.spoken_languages,
                 "profile_image_url": profile_data.profile_image_url,
                 "metadata": metadata,
+                "user_id": str(profile_data.user_id),
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }
@@ -2556,6 +2493,9 @@ class ProfileService:
             raise Exception(f"Failed to delete profile: {str(e)}")
 ```
 
+### services/invitations.py
+[Content for services/invitations.py not found]
+
 ### services/knowledgemanagement.py
 ```
 # services/knowledgemanagement.py
@@ -2574,11 +2514,15 @@ from models.memory import (
 )
 from services.memory import MemoryService
 import neo4j
+from neo4j import GraphDatabase
 from neo4j_graphrag.llm import OpenAILLM as LLM
 from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings as Embeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
-from neo4j_graphrag.retrievers import VectorRetriever
+from neo4j_graphrag.retrievers import HybridCypherRetriever
 from neo4j_graphrag.generation.graphrag import GraphRAG
+from neo4j_graphrag.experimental.components.types import (
+    LexicalGraphConfig
+)
 from neo4j_graphrag.experimental.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
 import os
 import asyncio
@@ -2654,6 +2598,8 @@ class KnowledgeManagement:
             If the exact date is unknown, please estimate the month and year based on context clues
             or use the current date if no time information is available.
 
+            If the user asks a question, it is never classified as a memory.
+
             IMPORTANT: Keep the response in the original language ({language}).
 
             Text: {response_text}
@@ -2699,6 +2645,61 @@ class KnowledgeManagement:
             logger.error(f"Error analyzing response: {str(e)}")
             raise
 
+    async def delete_memory(self, profile_id: str, memory_id: str) -> bool:
+        """
+        Delete a memory node and its relationships from Neo4j.
+        Args:
+            profile_id: The profile ID
+            memory_id: The memory ID
+        Returns:
+            bool: True if deletion was successful
+        """
+        driver = None
+        session = None
+        try:
+            # Construct the node ID
+            node_id = f"noblivion_{profile_id}_{memory_id}"
+
+            # Create Neo4j driver
+            driver = neo4j.GraphDatabase.driver(
+                NEO4J_URI,
+                auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+            )
+
+            # Create session
+            session = driver.session()
+
+            # Define the Cypher query
+            cypher_query = """
+            MATCH (n:Chunk)
+            WHERE n.id STARTS WITH $node_id
+            DETACH DELETE n
+            """
+
+            try:
+                # Execute the query synchronously
+                session.run(
+                    cypher_query,
+                    node_id=node_id
+                )
+                logger.info(f"Successfully deleted nodes with ID pattern: {node_id}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error executing Neo4j query: {str(e)}")
+                raise
+
+        except Exception as e:
+            logger.error(f"Error in delete_memory: {str(e)}")
+            raise
+
+        finally:
+            # Clean up resources
+            if session:
+                session.close()
+            if driver:
+                driver.close()
+        
     async def store_memory(self, profile_id: UUID, session_id: UUID, classification: MemoryClassification) -> Optional[Memory]:
         """
         Store classified memory in both Supabase and Neo4j (future implementation)
@@ -2733,23 +2734,23 @@ class KnowledgeManagement:
             }
 
             # Store in Supabase
-            stored_memory = await MemoryService.create_memory(
+            stored_memory_id = await MemoryService.create_memory(
                 MemoryCreate(**memory_data),
                 profile_id,
                 session_id
             )
 
             # in the background: store in Neo4j knowledge graph (vector and graph search)
-            asyncio.create_task(self.append_to_rag(classification.rewritten_text, classification.category, classification.location))
+            asyncio.create_task(self.append_to_rag(classification.rewritten_text, profile_id, stored_memory_id, classification.category, classification.location))
 
-            logger.info(f"Memory stored successfully")
-            return stored_memory
+            logger.info(f"Memory stored successfully as " + stored_memory_id)
+            return stored_memory_id
 
         except Exception as e:
             logger.error(f"Error storing memory: {str(e)}")
             raise
             
-    async def append_to_rag(self, memory_text, category, location):
+    async def append_to_rag(self, memory_text, profile_id, memory_id, category, location):
 
         neo4j_driver = neo4j.GraphDatabase.driver(NEO4J_URI,
             auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
@@ -2856,6 +2857,8 @@ class KnowledgeManagement:
              llm=ex_llm,
              driver=neo4j_driver,
              embedder=embedder,
+             lexical_graph_config= LexicalGraphConfig(id_prefix=f'noblivion_{profile_id}_{memory_id}', 
+                                                      document_node_label='memory_node' ),
              relations=relations_noblivion,
              entities=entities_noblivion,
              text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=500),
@@ -2870,6 +2873,51 @@ class KnowledgeManagement:
         logger.info(f"...> RAG pipeline execution time: {execution_time} seconds")
         
         return ""
+
+    async def query_with_rag(self, query_text: str, profile_id) -> str:
+        """
+        Query the knowledge graph using RAG and return the answer.
+        """
+        try:
+            logger.info("Initializing GraphRAG for query")
+            neo4j_driver = neo4j.GraphDatabase.driver(
+                NEO4J_URI,
+                auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+            )
+    
+            embedder = Embeddings()
+
+            # Limit the query to match only nodes for the profile
+            retrieval_query = "MATCH (n:Chunk)" f"WHERE n.id STARTS WITH 'noblivion_{profile_id}'" "RETURN n"
+            
+            hybrid_retriever = HybridCypherRetriever(
+                neo4j_driver,
+                "vector_index_noblivion",
+                "fulltext_index_noblivion",
+                retrieval_query,
+                embedder
+            )
+    
+            llm = LLM(
+                model_name="gpt-4o-mini",
+                model_params={
+                    "max_tokens": 2000,  # Limit output tokens
+                    "temperature": 0.2
+                }
+            )
+            rag = GraphRAG(llm=llm, retriever=hybrid_retriever)
+    
+            # Get response
+            logger.debug(f"Executing RAG query: {query_text}")
+            response = rag.search(query_text=query_text, 
+                                  retriever_config= { 'top_k': 5 })
+            logger.debug(f"Generated response: {response.answer}")
+    
+            return response.answer
+    
+        except Exception as e:
+            logger.error(f"Error processing RAG query: {str(e)}")
+            raise Exception(f"Failed to process RAG query: {str(e)}")
 ```
 
 ### services/email.py
@@ -2879,26 +2927,41 @@ import os
 from mailersend import emails
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
+import datetime
+import aiofiles
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
         self.api_key = os.getenv('MAILERSEND_API_KEY')
         self.sender_domain = os.getenv('MAILERSEND_SENDER_EMAIL')
+        self.frontend_url = os.getenv('FRONTEND_URL')
+
+        if not self.api_key:
+            raise ValueError("MAILERSEND_API_KEY not found in environment")
+        if not self.sender_domain:
+            raise ValueError("MAILERSEND_SENDER_EMAIL not found in environment")
+        if not self.frontend_url:
+            raise ValueError("FRONTEND_URL not found in environment")
+
         self.mailer = emails.NewEmail(self.api_key)
+        logger.debug(f"Email service initialized with frontend URL: {self.frontend_url}")
 
-    def send_verification_email(self, to_email: str, verification_code: str):
+    def _create_mail_body(
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str
+    ) -> dict:
+        """Create a standardized mail body for MailerSend"""
         try:
-            # Read template
-            template_path = Path("templates/account-verification-en.html")
-            with open(template_path, "r") as f:
-                html_content = f.read()
+            # Replace logo URL in template
+            logo_url = f"{self.frontend_url}/conch-logo-small.png"
+            logger.debug(f"Using logo URL: {logo_url}")
+            html_content = html_content.replace("{logo_url}", logo_url)
 
-            # Replace placeholder
-            html_content = html_content.replace("{verification_code}", verification_code)
-
-            # Prepare empty mail body
             mail_body = {}
 
             # Set sender
@@ -2918,20 +2981,104 @@ class EmailService:
             self.mailer.set_mail_to(recipients, mail_body)
 
             # Set subject
-            self.mailer.set_subject("Verify your Noblivion account", mail_body)
+            self.mailer.set_subject(subject, mail_body)
 
             # Set content
             self.mailer.set_html_content(html_content, mail_body)
-            self.mailer.set_plaintext_content(
-                f"Your verification code is: {verification_code}", 
-                mail_body
+
+            # Create plain text version
+            plain_text = html_content.replace('<br>', '\n').replace('</p>', '\n\n')
+            self.mailer.set_plaintext_content(plain_text, mail_body)
+
+            return mail_body
+
+        except Exception as e:
+            logger.error(f"Error creating mail body: {str(e)}")
+            raise
+
+
+    async def send_interview_invitation(self, to_email: str, profile_name: str, token: str, expires_at: str):
+        try:
+            logger.info("Sending interview invitation email")
+            # Read template
+            template_path = Path("templates/interview-invitation.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+
+            # Format the date
+            formatted_date = expires_at.strftime("%B %d, %Y")  # e.g., "December 24, 2024"
+            
+            # Replace placeholders
+            html_content = html_content\
+                .replace("{profile_name}", profile_name)\
+                .replace("{interview_url}", f"{os.getenv('FRONTEND_URL')}/interview-token?token={token}")\
+                .replace("{expiry_date}", formatted_date)
+
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject=f"You're invited to share memories about {profile_name}",
+                html_content=html_content
             )
 
-            # Send email synchronously
+            logger.info("Sending email to " + to_email)
+
+            # Send email
             return self.mailer.send(mail_body)
 
         except Exception as e:
-            print(f"Failed to send verification email: {str(e)}")
+            logger.error(f"Failed to send invitation email: {str(e)}")
+            raise
+
+    async def send_expiry_reminder(self, to_email: str, profile_name: str, expires_at: str):
+        try:
+            template_path = Path("templates/expiry-reminder.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+
+            # Format the date
+            formatted_date = expires_at.strftime("%B %d, %Y")
+            
+            html_content = html_content\
+                .replace("{profile_name}", profile_name)\
+                .replace("{expiry_date}", formatted_date)
+
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject=f"Reminder: Interview invitation for {profile_name} expires soon",
+                html_content=html_content
+            )
+
+            return self.mailer.send(mail_body)
+
+        except Exception as e:
+            logger.error(f"Failed to send expiry reminder: {str(e)}")
+            raise
+
+    async def send_password_reset_email(self, to_email: str, reset_token: str):
+        """Send password reset email with reset token link."""
+        try:
+            # Read template
+            template_path = Path("templates/password-reset.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+    
+            # Replace placeholders
+            reset_url = f"{os.getenv('FRONTEND_URL')}/reset-password?token={reset_token}"
+            html_content = html_content.replace("{reset_url}", reset_url)
+    
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject="Reset Your Noblivion Password",
+                html_content=html_content
+            )
+    
+            # Send email
+            return self.mailer.send(mail_body)
+    
+        except Exception as e:
+            logger.error(f"Failed to send password reset email: {str(e)}")
             raise
 ```
 
@@ -2949,6 +3096,7 @@ from models.memory import MemoryCreate, Category, Memory, Location
 from services.memory import MemoryService
 import openai
 from uuid import UUID, uuid4
+from services.usermanagement import UserManagementService
 
 logger = logging.getLogger(__name__)
 
@@ -3026,9 +3174,10 @@ class ProfileService:
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
 
-            # Get narrator settings from user profile
-            user_result = self.supabase.table("users").select("profile").eq("id", str(profile_id)).execute()
-            user_profile = user_result.data[0].get("profile", {}) if user_result.data else {}
+            # Get user settings using UserManagementService
+            user_management = UserManagementService()
+            user_result = await user_management.get_user_profile(str(profile_id))
+            user_profile = user_result.get('profile', {}) if user_result else {}
 
             # Get narrative settings with defaults
             narrator_perspective = user_profile.get("narrator_perspective", "ego")
@@ -3230,6 +3379,7 @@ class ProfileService:
                 "spoken_languages": profile_data.spoken_languages,
                 "profile_image_url": profile_data.profile_image_url,
                 "metadata": metadata,
+                "user_id": str(profile_data.user_id),
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }
@@ -3366,18 +3516,45 @@ class ProfileService:
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from config.jwt import decode_token
+from uuid import UUID
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    payload = decode_token(token)
-    if payload is None:
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> UUID:
+    """Get current user ID from token"""
+    try:
+        payload = decode_token(token)
+        if payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Extract user_id from the 'sub' claim
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Convert string to UUID
+        return UUID(user_id)
+
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Invalid user ID format",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return payload
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 ```
 --------------
 
@@ -3439,228 +3616,1048 @@ The unique identifier for an client is a UUIDv4. Each client can have several in
 This is the current schema in Supabase:
 ---------------
 
-### storage_layer_scripts.sql
+### noblivion-schema.sql
 ```
--- Enable necessary extensions
-create extension if not exists "uuid-ossp";
-create extension if not exists "pgcrypto";
-
-CREATE TABLE public.users (
-    instance_id uuid, 
-    id uuid NOT NULL DEFAULT uuid_generate_v4(), 
-    id uuid NOT NULL, 
-    first_name text NOT NULL, 
-    aud character varying(255), 
-    last_name text NOT NULL, 
-    email text NOT NULL, role character varying(255), 
-    email character varying(255), 
-    password text NOT NULL, 
-    encrypted_password character varying(255), 
-    created_at timestamp with time zone DEFAULT now(), 
-    updated_at timestamp with time zone DEFAULT now(), 
-    email_confirmed_at timestamp with time zone, 
-    invited_at timestamp with time zone, 
-    profile jsonb DEFAULT '{"is_validated_by_email": false}'::jsonb, 
-    confirmation_token character varying(255), 
-    confirmation_sent_at timestamp with time zone, 
-    recovery_token character varying(255), 
-    recovery_sent_at timestamp with time zone, 
-    email_change_token_new character varying(255), 
-    email_change character varying(255), 
-    email_change_sent_at timestamp with time zone, 
-    last_sign_in_at timestamp with time zone, 
-    raw_app_meta_data jsonb, 
-    raw_user_meta_data jsonb, is_super_admin boolean, created_at timestamp with time zone, updated_at timestamp with time zone, phone text DEFAULT NULL::character varying, phone_confirmed_at timestamp with time zone, phone_change text DEFAULT ''::character varying, phone_change_token character varying(255) DEFAULT ''::character varying, phone_change_sent_at timestamp with time zone, confirmed_at timestamp with time zone, email_change_token_current character varying(255) DEFAULT ''::character varying, email_change_confirm_status smallint DEFAULT 0, banned_until timestamp with time zone, reauthentication_token character varying(255) DEFAULT ''::character varying, reauthentication_sent_at timestamp with time zone, is_sso_user boolean NOT NULL DEFAULT false, deleted_at timestamp with time zone, is_anonymous boolean NOT NULL DEFAULT false);
--- Profiles table
-create table profiles (
-    id uuid primary key default uuid_generate_v4(),
-    first_name text not null,
-    last_name text not null,
-    date_of_birth date not null,
-    place_of_birth text not null,
-    gender text not null,
-    children text[] default '{}',
-    spoken_languages text[] default '{}',
-    profile_image_url text,
-    created_at timestamptz default now(),
-    updated_at timestamptz default now()
+CREATE TABLE IF NOT EXISTS "public"."achievement_progress" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "achievement_id" "text" NOT NULL,
+    "current_count" integer DEFAULT 0,
+    "completed" boolean DEFAULT false,
+    "unlocked_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
--- Interview sessions table
-create table interview_sessions (
-    id uuid primary key default uuid_generate_v4(),
-    profile_id uuid references profiles(id) on delete cascade not null,
-    category text not null,
-    started_at timestamptz default now(),
-    completed_at timestamptz,
-    summary text,
-    emotional_state jsonb,
-    created_at timestamptz default now(),
-    updated_at timestamptz default now()
+
+ALTER TABLE "public"."achievement_progress" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."memories" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "session_id" "uuid" NOT NULL,
+    "category" "text" NOT NULL,
+    "description" "text" NOT NULL,
+    "time_period" "date" NOT NULL,
+    "location" "jsonb",
+    "emotions" "text"[] DEFAULT '{}'::"text"[],
+    "people" "jsonb"[] DEFAULT '{}'::"jsonb"[],
+    "image_urls" "text"[] DEFAULT '{}'::"text"[],
+    "audio_url" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "sentiment_analysis" "jsonb"
 );
 
--- Memories table
-create table memories (
-    id uuid primary key default uuid_generate_v4(),
-    profile_id uuid references profiles(id) on delete cascade not null,
-    session_id uuid references interview_sessions(id) on delete cascade not null,
-    category text not null,
-    description text not null,
-    time_period date not null,
-    location jsonb,
-    emotions text[] default '{}',
-    people jsonb[] default '{}',
-    image_urls text[] default '{}',
-    audio_url text,
-    created_at timestamptz default now(),
-    updated_at timestamptz default now(),
-    sentiment_analysis jsonb
+
+ALTER TABLE "public"."memories" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."profiles" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "first_name" "text" NOT NULL,
+    "last_name" "text" NOT NULL,
+    "date_of_birth" "date" NOT NULL,
+    "place_of_birth" "text" NOT NULL,
+    "gender" "text" NOT NULL,
+    "children" "text"[] DEFAULT '{}'::"text"[],
+    "spoken_languages" "text"[] DEFAULT '{}'::"text"[],
+    "profile_image_url" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "metadata" "jsonb",
+    "subscribed_at" timestamp without time zone,
+    "user_id" "uuid"
 );
 
--- Memory sentiments table
-create table memory_sentiments (
-    id uuid primary key default uuid_generate_v4(),
-    memory_id uuid references memories(id) on delete cascade not null,
-    sentiment_data jsonb not null,
-    emotional_triggers text[] default '{}',
-    intensity float default 0.0,
-    requires_support boolean default false,
-    created_at timestamptz default now()
+
+ALTER TABLE "public"."profiles" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."achievement_statistics" AS
+ SELECT "p"."id" AS "profile_id",
+    "p"."first_name",
+    "p"."last_name",
+    "count"(DISTINCT "ap"."achievement_id") AS "completed_achievements",
+    "count"(DISTINCT "m"."id") AS "total_memories",
+    "count"(DISTINCT "m"."id") FILTER (WHERE ("m"."image_urls" <> '{}'::"text"[])) AS "memories_with_photos",
+    "count"(DISTINCT "m"."session_id") AS "total_sessions"
+   FROM (("public"."profiles" "p"
+     LEFT JOIN "public"."achievement_progress" "ap" ON ((("p"."id" = "ap"."profile_id") AND ("ap"."completed" = true))))
+     LEFT JOIN "public"."memories" "m" ON (("p"."id" = "m"."profile_id")))
+  GROUP BY "p"."id", "p"."first_name", "p"."last_name";
+
+
+ALTER TABLE "public"."achievement_statistics" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."achievements" (
+    "id" "text" NOT NULL,
+    "type" "text" NOT NULL,
+    "titles" "jsonb" NOT NULL,
+    "descriptions" "jsonb" NOT NULL,
+    "icon" "text" NOT NULL,
+    "color" "text" NOT NULL,
+    "required_count" integer NOT NULL,
+    "bonus_achievement_id" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
 );
 
--- Achievements table
-create table achievements (
-    id text primary key,
-    type text not null,
-    titles jsonb not null, -- Multilingual titles
-    descriptions jsonb not null, -- Multilingual descriptions
-    icon text not null,
-    color text not null,
-    required_count integer not null,
-    bonus_achievement_id text references achievements(id),
-    created_at timestamptz default now()
+
+ALTER TABLE "public"."achievements" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."documents" (
+    "id" bigint NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "content" "text",
+    "metadata" "jsonb",
+    "embedding" "extensions"."vector"
 );
 
--- Achievement progress table
-create table achievement_progress (
-    id uuid primary key default uuid_generate_v4(),
-    profile_id uuid references profiles(id) on delete cascade not null,
-    achievement_id text references achievements(id) on delete cascade not null,
-    current_count integer default 0,
-    completed boolean default false,
-    unlocked_at timestamptz,
-    created_at timestamptz default now(),
-    updated_at timestamptz default now(),
-    unique(profile_id, achievement_id)
+
+
+CREATE TABLE IF NOT EXISTS "public"."interview_invitations" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "profile_id" "uuid",
+    "created_by" "uuid",
+    "email" "text" NOT NULL,
+    "secret_token" "text" NOT NULL,
+    "expires_at" timestamp with time zone NOT NULL,
+    "last_used_at" timestamp with time zone,
+    "status" "text" DEFAULT 'active'::"text" NOT NULL,
+    "session_count" integer DEFAULT 0,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
--- PDF exports table
-create table pdf_exports (
-    id uuid primary key default uuid_generate_v4(),
-    profile_id uuid references profiles(id) on delete cascade not null,
-    file_url text not null,
-    generated_at timestamptz default now(),
-    category text,
-    date_range tstzrange,
-    created_at timestamptz default now()
+
+ALTER TABLE "public"."interview_invitations" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."interview_sessions" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "category" "text" NOT NULL,
+    "started_at" timestamp with time zone DEFAULT "now"(),
+    "completed_at" timestamp with time zone,
+    "summary" "text",
+    "emotional_state" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "topics_of_interest" "jsonb" DEFAULT '[]'::"jsonb"
 );
 
--- Triggers for updated_at timestamps
-create or replace function update_updated_at()
-returns trigger as $$
-begin
-    new.updated_at = now();
-    return new;
-end;
-$$ language plpgsql;
 
-create trigger profiles_updated_at
-    before update on profiles
-    for each row
-    execute function update_updated_at();
+ALTER TABLE "public"."interview_sessions" OWNER TO "postgres";
 
-create trigger sessions_updated_at
-    before update on interview_sessions
-    for each row
-    execute function update_updated_at();
 
-create trigger memories_updated_at
-    before update on memories
-    for each row
-    execute function update_updated_at();
+CREATE TABLE IF NOT EXISTS "public"."pdf_exports" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "file_url" "text" NOT NULL,
+    "generated_at" timestamp with time zone DEFAULT "now"(),
+    "category" "text",
+    "date_range" "tstzrange",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
 
-create trigger achievement_progress_updated_at
-    before update on achievement_progress
-    for each row
-    execute function update_updated_at();
 
--- Insert default achievements
-insert into achievements (id, type, titles, descriptions, icon, color, required_count) values
-    ('first_memories', 'memory_milestones', 
-     '{"en": "Memory Keeper", "de": "Erinnerungsbewahrer"}',
-     '{"en": "Shared your first 5 memories", "de": "Ihre ersten 5 Erinnerungen geteilt"}',
-     'AutoStories', '#4CAF50', 5),
+ALTER TABLE "public"."pdf_exports" OWNER TO "postgres";
 
-    ('photo_collector', 'media_sharing',
-     '{"en": "Photo Collector", "de": "Fotograf"}',
-     '{"en": "Added photos to 10 memories", "de": "10 Erinnerungen mit Fotos ergänzt"}',
-     'PhotoLibrary', '#2196F3', 10),
 
-    ('childhood_expert', 'category_completion',
-     '{"en": "Childhood Chronicles", "de": "Kindheitserinnerungen"}',
-     '{"en": "Shared 8 childhood memories", "de": "8 Kindheitserinnerungen geteilt"}',
-     'ChildCare', '#9C27B0', 8),
 
-    ('family_historian', 'family_connection',
-     '{"en": "Family Historian", "de": "Familienchronist"}',
-     '{"en": "Mentioned 10 different family members", "de": "10 verschiedene Familienmitglieder erwähnt"}',
-     'People', '#FF9800', 10),
 
-    ('consistent_sharing', 'session_streaks',
-     '{"en": "Regular Storyteller", "de": "Regelmäßiger Erzähler"}',
-     '{"en": "Completed 5 interview sessions", "de": "5 Interviewsitzungen abgeschlossen"}',
-     'Timer', '#FF5722', 5),
+ALTER TABLE ONLY "public"."achievement_progress"
+    ADD CONSTRAINT "achievement_progress_pkey" PRIMARY KEY ("id");
 
-    ('emotional_journey', 'emotional_sharing',
-     '{"en": "Heart of Gold", "de": "Herz aus Gold"}',
-     '{"en": "Shared deeply emotional memories", "de": "Emotional bedeutsame Erinnerungen geteilt"}',
-     'Favorite', '#E91E63', 3);
 
--- RLS Policies
-alter table profiles enable row level security;
-alter table interview_sessions enable row level security;
-alter table memories enable row level security;
-alter table memory_sentiments enable row level security;
-alter table achievement_progress enable row level security;
-alter table pdf_exports enable row level security;
 
--- Create indexes for better performance
-create index idx_memories_profile_id on memories(profile_id);
-create index idx_memories_session_id on memories(session_id);
-create index idx_memories_time_period on memories(time_period);
-create index idx_sessions_profile_id on interview_sessions(profile_id);
-create index idx_achievement_progress_profile on achievement_progress(profile_id);
-create index idx_memory_sentiments_memory on memory_sentiments(memory_id);
+ALTER TABLE ONLY "public"."achievement_progress"
+    ADD CONSTRAINT "achievement_progress_profile_id_achievement_id_key" UNIQUE ("profile_id", "achievement_id");
 
--- Create view for achievement statistics
-create view achievement_statistics as
-select 
-    p.id as profile_id,
-    p.first_name,
-    p.last_name,
-    count(distinct ap.achievement_id) as completed_achievements,
-    count(distinct m.id) as total_memories,
-    count(distinct m.id) filter (where m.image_urls != '{}') as memories_with_photos,
-    count(distinct m.session_id) as total_sessions
-from profiles p
-left join achievement_progress ap on p.id = ap.profile_id and ap.completed = true
-left join memories m on p.id = m.profile_id
-group by p.id, p.first_name, p.last_name;
 
--- Storage configuration (run this after creating the bucket in Supabase dashboard)
-insert into storage.buckets (id, name) values ('profile-images', 'Profile Images') on conflict do nothing;
-insert into storage.buckets (id, name) values ('memory-media', 'Memory Media') on conflict do nothing;
-insert into storage.buckets (id, name) values ('exports', 'PDF Exports') on conflict do nothing;
+
+ALTER TABLE ONLY "public"."achievements"
+    ADD CONSTRAINT "achievements_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."documents"
+    ADD CONSTRAINT "documents_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."interview_invitations"
+    ADD CONSTRAINT "interview_invitations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."interview_invitations"
+    ADD CONSTRAINT "interview_invitations_secret_token_key" UNIQUE ("secret_token");
+
+
+
+ALTER TABLE ONLY "public"."interview_sessions"
+    ADD CONSTRAINT "interview_sessions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."memories"
+    ADD CONSTRAINT "memories_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."pdf_exports"
+    ADD CONSTRAINT "pdf_exports_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."profiles"
+    ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_email_key" UNIQUE ("email");
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_pkey" PRIMARY KEY ("id");
+
+
+
+CREATE INDEX "idx_achievement_progress_profile" ON "public"."achievement_progress" USING "btree" ("profile_id");
+
+
+
+CREATE INDEX "idx_interview_sessions_topics" ON "public"."interview_sessions" USING "gin" ("topics_of_interest");
+
+
+
+CREATE INDEX "idx_invitations_email" ON "public"."interview_invitations" USING "btree" ("email");
+
+
+
+CREATE INDEX "idx_invitations_profile" ON "public"."interview_invitations" USING "btree" ("profile_id");
+
+
+
+CREATE INDEX "idx_invitations_token" ON "public"."interview_invitations" USING "btree" ("secret_token");
+
+
+
+CREATE INDEX "idx_memories_profile_id" ON "public"."memories" USING "btree" ("profile_id");
+
+
+
+CREATE INDEX "idx_memories_profile_timeline" ON "public"."memories" USING "btree" ("profile_id", "time_period" DESC);
+
+
+
+CREATE INDEX "idx_memories_session_id" ON "public"."memories" USING "btree" ("session_id");
+
+
+
+CREATE INDEX "idx_memories_time_period" ON "public"."memories" USING "btree" ("time_period");
+
+
+
+CREATE INDEX "idx_profiles_user_id" ON "public"."profiles" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_sessions_profile_id" ON "public"."interview_sessions" USING "btree" ("profile_id");
+
+
+
+CREATE INDEX "idx_users_email" ON "public"."users" USING "btree" ("email");
+
+
+
+CREATE OR REPLACE TRIGGER "achievement_progress_updated_at" BEFORE UPDATE ON "public"."achievement_progress" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "interview_invitations_updated_at" BEFORE UPDATE ON "public"."interview_invitations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "memories_updated_at" BEFORE UPDATE ON "public"."memories" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "profiles_updated_at" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "sessions_updated_at" BEFORE UPDATE ON "public"."interview_sessions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+
+
+
+
+ALTER TABLE ONLY "public"."achievement_progress"
+    ADD CONSTRAINT "achievement_progress_achievement_id_fkey" FOREIGN KEY ("achievement_id") REFERENCES "public"."achievements"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."achievement_progress"
+    ADD CONSTRAINT "achievement_progress_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."achievements"
+    ADD CONSTRAINT "achievements_bonus_achievement_id_fkey" FOREIGN KEY ("bonus_achievement_id") REFERENCES "public"."achievements"("id");
+
+
+
+ALTER TABLE ONLY "public"."profiles"
+    ADD CONSTRAINT "fk_user" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."interview_invitations"
+    ADD CONSTRAINT "interview_invitations_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."interview_invitations"
+    ADD CONSTRAINT "interview_invitations_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."interview_sessions"
+    ADD CONSTRAINT "interview_sessions_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."memories"
+    ADD CONSTRAINT "memories_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."memories"
+    ADD CONSTRAINT "memories_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "public"."interview_sessions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."memory_sentiments"
+    ADD CONSTRAINT "memory_sentiments_memory_id_fkey" FOREIGN KEY ("memory_id") REFERENCES "public"."memories"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."pdf_exports"
+    ADD CONSTRAINT "pdf_exports_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+CREATE POLICY "Admin service API only" ON "public"."users" USING ((("auth"."jwt"() ->> 'role'::"text") = 'service_role'::"text"));
+
+
+
+ALTER TABLE "public"."achievement_progress" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."documents" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."interview_sessions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."memories" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."pdf_exports" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GRANT ALL ON FUNCTION "public"."update_updated_at"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_updated_at"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_updated_at"() TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GRANT ALL ON TABLE "public"."achievement_progress" TO "anon";
+GRANT ALL ON TABLE "public"."achievement_progress" TO "authenticated";
+GRANT ALL ON TABLE "public"."achievement_progress" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."memories" TO "anon";
+GRANT ALL ON TABLE "public"."memories" TO "authenticated";
+GRANT ALL ON TABLE "public"."memories" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."profiles" TO "anon";
+GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
+GRANT ALL ON TABLE "public"."profiles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."achievement_statistics" TO "anon";
+GRANT ALL ON TABLE "public"."achievement_statistics" TO "authenticated";
+GRANT ALL ON TABLE "public"."achievement_statistics" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."achievements" TO "anon";
+GRANT ALL ON TABLE "public"."achievements" TO "authenticated";
+GRANT ALL ON TABLE "public"."achievements" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."documents" TO "anon";
+GRANT ALL ON TABLE "public"."documents" TO "authenticated";
+GRANT ALL ON TABLE "public"."documents" TO "service_role";
+
+
+
+GRANT ALL ON SEQUENCE "public"."documents_id_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."documents_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."documents_id_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."interview_invitations" TO "anon";
+GRANT ALL ON TABLE "public"."interview_invitations" TO "authenticated";
+GRANT ALL ON TABLE "public"."interview_invitations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."interview_sessions" TO "anon";
+GRANT ALL ON TABLE "public"."interview_sessions" TO "authenticated";
+GRANT ALL ON TABLE "public"."interview_sessions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."memory_sentiments" TO "anon";
+GRANT ALL ON TABLE "public"."memory_sentiments" TO "authenticated";
+GRANT ALL ON TABLE "public"."memory_sentiments" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pdf_exports" TO "anon";
+GRANT ALL ON TABLE "public"."pdf_exports" TO "authenticated";
+GRANT ALL ON TABLE "public"."pdf_exports" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."users" TO "anon";
+GRANT ALL ON TABLE "public"."users" TO "authenticated";
+GRANT ALL ON TABLE "public"."users" TO "service_role";
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES  TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS  TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS  TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS  TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS  TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES  TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES  TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES  TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES  TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+RESET ALL;
 ```
 ---------------
 We will use the supabase Python client.

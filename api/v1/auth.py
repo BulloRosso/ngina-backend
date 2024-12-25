@@ -1,100 +1,24 @@
 # api/v1/auth.py
-from fastapi import APIRouter, HTTPException, Request, Depends, Header
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.security import OAuth2PasswordBearer
+from typing import Dict, Optional, Any
 from pydantic import BaseModel
-from datetime import datetime, timedelta
-from config.jwt import create_access_token
-from supabase import create_client
-import os
-from uuid import UUID, uuid4
-import bcrypt
-from services.email import EmailService
-import random
-import string
-from config.jwt import decode_token
+from uuid import UUID
 import logging
-from typing import Dict, Optional
-import json
+import os
+from services.usermanagement import UserManagementService, UserData
+from dependencies.auth import get_current_user
+from supabase import create_client, Client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-supabase = create_client(
-    supabase_url=os.getenv("SUPABASE_URL"),
-    supabase_key=os.getenv("SUPABASE_KEY")
-)
-
-class PasswordResetRequest(BaseModel):
-    email: str
-
-class PasswordResetConfirm(BaseModel):
-    token: str
-    new_password: str
-    
-class ProfileUpdate(BaseModel):
-    profile: Dict
-
-async def get_current_user(authorization: str = Header(None)) -> str:
-    """Get current user from authorization header"""
-    if not authorization:
-        logger.error("No authorization header provided")
-        raise HTTPException(
-            status_code=401,
-            detail="No authorization header"
-        )
-
-    try:
-        logger.debug(f"Processing authorization header: {authorization[:20]}...")
-        scheme, token = authorization.split()
-        if scheme.lower() != 'bearer':
-            logger.error(f"Invalid authentication scheme: {scheme}")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid authentication scheme"
-            )
-
-        logger.debug("Attempting to decode token...")
-        payload = decode_token(token)
-        if not payload:
-            logger.error("Token decode returned None")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token"
-            )
-
-        user_id = payload.get("sub")
-        if not user_id:
-            logger.error("No user ID in token payload")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token payload"
-            )
-
-        logger.debug(f"Successfully validated token for user: {user_id}")
-        return user_id
-    except ValueError as e:
-        logger.error(f"Invalid authorization header format: {str(e)}")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid authorization header format"
-        )
-    except Exception as e:
-        logger.error(f"Error validating token: {type(e).__name__}: {str(e)}")
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid token"
-        )
-
-def generate_verification_code():
-    return ''.join(random.choices(string.digits, k=8))
-    
 class LoginRequest(BaseModel):
     email: str
     password: str
-    
+
 class SignupRequest(BaseModel):
     first_name: str
     last_name: str
@@ -104,371 +28,230 @@ class SignupRequest(BaseModel):
 class VerificationRequest(BaseModel):
     code: str
     user_id: str
-    
-# api/v1/auth.py
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
 @router.post("/signup")
 async def signup(request: SignupRequest):
     try:
-        # Check if user exists
-        result = supabase.table("users").select("*").eq("email", request.email).execute()
-        if result.data:
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        # Generate verification code
-        verification_code = generate_verification_code()
-
-        # Create user with verification code in profile
-        user_data = {
-            "first_name": request.first_name,
-            "last_name": request.last_name,
-            "email": request.email,
-            "password": bcrypt.hashpw(request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-            "profile": {
-                "signup_secret": verification_code,
-                "is_validated_by_email": False
-            }
-        }
-
-        result = supabase.table("users").insert(user_data).execute()
-        user = result.data[0]
-
-        # Send verification email (synchronously)
-        email_service = EmailService()
-        email_service.send_verification_email(request.email, verification_code)  # Removed await
-
-        # Create access token
-        access_token = create_access_token(data={"sub": user["id"], "email": user["email"]})
+        service = UserManagementService()
+        user = await service.create_user(UserData(
+            first_name=request.first_name,
+            last_name=request.last_name,
+            email=request.email,
+            password=request.password
+        ))
 
         return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "first_name": user["first_name"],
-                "last_name": user["last_name"],
-                "is_validated": False
-            }
+            "user": user,
+            "message": "User created successfully"
         }
     except Exception as e:
-        print(f"Signup error: {str(e)}")  # Add debug logging
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Signup error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/login")
+async def login(login_data: LoginRequest):
+    try:
+        service = UserManagementService()
+        result = await service.login_user(login_data.email, login_data.password)
+
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+
+        # Get user verification status
+        user_response = supabase_client.auth.admin.get_user_by_id(result["id"])
+        is_validated = False
+        mfa_required = False
+        mfa_data = None
+
+        if user_response.user.identities:
+            identity = user_response.user.identities[0]
+            is_validated = identity.identity_data['email_verified']
+
+            # Check if MFA needs to be set up
+            try:
+                qr_response = supabase_client.auth.api.generate_mfa_qr_code(
+                    access_token=result["access_token"]
+                )
+                if qr_response.get("qr_code"):
+                    mfa_required = True
+                    mfa_data = {
+                        'qr_code': qr_response["qr_code"],
+                        'secret': qr_response.get("secret", "")
+                    }
+            except Exception as e:
+                logger.error(f"Error generating MFA QR code: {str(e)}")
+
+        return {
+            "access_token": result["access_token"],
+            "token_type": "bearer",
+            "user": {
+                "id": result["id"],
+                "email": result["email"],
+                "first_name": result["first_name"],
+                "last_name": result["last_name"],
+                "is_validated": is_validated
+            },
+            "mfa_required": mfa_required,
+            "mfa_data": mfa_data
+        }
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+@router.post("/verify-email")
+async def verify_email(verification_data: VerificationRequest):
+    try:
+        service = UserManagementService()
+        verified = await service.verify_email(
+            UUID(verification_data.user_id),
+            verification_data.code
+        )
+        return {"verified": verified}
+    except Exception as e:
+        logger.error(f"Verification error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/validation-status/{user_id}")
 async def check_validation_status(user_id: str):
-    """Check if a user's email is validated"""
     try:
-        # Query user from Supabase
-        result = supabase.table("users").select("profile").eq("id", user_id).execute()
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
 
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
+        user_response = supabase_client.auth.admin.get_user_by_id(user_id)
+        is_validated = False
 
-        user = result.data[0]
-        profile = user.get("profile", {})
-
-        # Check validation status from profile JSONB
-        is_validated = profile.get("is_validated_by_email", False)
+        if user_response.user.identities:
+            identity = user_response.user.identities[0]
+            is_validated = identity.identity_data['email_verified']
 
         return {
             "is_validated": is_validated,
             "user_id": user_id
         }
-
     except Exception as e:
-        logger.error(f"Error checking validation status: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to check validation status: {str(e)}"
-        )
-        
-@router.post("/verify-email")
-async def verify_email(verification_data: VerificationRequest):
+        logger.error(f"Validation status check error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/verify-mfa")
+async def verify_mfa(user_id: str, totp_code: str, access_token: str):
     try:
-        # Get user
-        result = supabase.table("users").select("*").eq(
-            "id", verification_data.user_id
-        ).execute()
-
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        user = result.data[0]
-        profile = user.get("profile", {})
-
-        # Check verification code
-        if profile.get("signup_secret") != verification_data.code:
-            return {"verified": False}
-
-        # Update user profile
-        profile["is_validated_by_email"] = True
-        supabase.table("users").update(
-            {"profile": profile}
-        ).eq("id", verification_data.user_id).execute()
-
-        return {"verified": True}
-    except Exception as e:
-        print(f"Verification error: {str(e)}")  # Add debug logging
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/resend-verification")
-async def resend_verification(user_id: str):
-    try:
-        # Get user
-        result = supabase.table("users").select("*").eq("id", user_id).execute()
-        if not result.data:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        user = result.data[0]
-
-        # Generate new verification code
-        verification_code = generate_verification_code()
-
-        # Update user profile
-        profile = user.get("profile", {})
-        profile["signup_secret"] = verification_code
-        supabase.table("users").update({"profile": profile}).eq("id", user_id).execute()
-
-        # Send new verification email
-        email_service = EmailService()
-        await email_service.send_verification_email(user["email"], verification_code)
-
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/login")
-async def login(login_data: LoginRequest):  # Use Pydantic model for validation
-    try:
-        print(f"Login attempt for email: {login_data.email}")  # Debug logging
-
-        # Get user from Supabase
-        result = supabase.table("users").select("*").eq("email", login_data.email).execute()
-
-        if not result.data:
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid email or password"
-            )
-
-        user = result.data[0]
-
-        # Verify password
-        is_valid = bcrypt.checkpw(
-            login_data.password.encode('utf-8'),
-            user["password"].encode('utf-8')
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
         )
 
-        if not is_valid:
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid email or password"
-            )
-
-        # Create access token
-        access_token = create_access_token(
-            data={"sub": user["id"], "email": user["email"]}
-        )
-
-        return {
+        verify_response = supabase_client.auth.api.verify_mfa({
             "access_token": access_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "first_name": user["first_name"],
-                "last_name": user["last_name"]
-            }
-        }
+            "totp_code": totp_code
+        })
 
-    except HTTPException:
-        raise
+        if not verify_response:
+            raise HTTPException(status_code=400, detail="Invalid MFA code")
+
+        return {"success": True, "message": "MFA setup successful"}
     except Exception as e:
-        print(f"Login error: {str(e)}")  # Debug logging
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        logger.error(f"MFA verification error: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid MFA code")
+        
+@router.post("/request-password-reset")
+async def request_password_reset(request: PasswordResetRequest):
+    try:
+        service = UserManagementService()
+        await service.request_password_reset(request.email)
+
+        # For security, always return success even if email doesn't exist
+        return {"message": "If the email exists, a reset link has been sent."}
+    except Exception as e:
+        logger.error(f"Password reset request error: {str(e)}")
+        return {"message": "If the email exists, a reset link has been sent."}
+
+@router.post("/reset-password")
+async def reset_password(request: PasswordResetConfirm):
+    try:
+        service = UserManagementService()
+        success = await service.reset_password(request.token, request.new_password)
+
+        if not success:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+        return {"message": "Password has been reset successfully"}
+    except Exception as e:
+        logger.error(f"Password reset error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/profile/{user_id}")
 async def get_user_profile(
     user_id: str,
-    current_user: str = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
     """Get user profile settings"""
     try:
-        logger.debug(f"Getting profile for user ID: {user_id}")
-
         # Verify user is accessing their own profile
-        if current_user != user_id:
-            logger.warning(f"User {current_user} attempted to access profile of {user_id}")
+        if str(current_user["id"]) != user_id:
             raise HTTPException(
                 status_code=403,
                 detail="Cannot access another user's profile"
             )
 
-        result = supabase.table("users").select("profile").eq("id", user_id).execute()
+        service = UserManagementService()
+        result = await service.get_user_profile(user_id)
 
-        if not result.data:
-            logger.warning(f"No profile found for user {user_id}")
+        if not result:
             raise HTTPException(status_code=404, detail="User not found")
 
-        profile_data = result.data[0].get("profile", {})
-
-        # Ensure default fields exist
-        profile_data.setdefault("signup_secret", "")
-        profile_data.setdefault("is_validated_by_email", False)
-        profile_data.setdefault("narrator_perspective", "ego")
-        profile_data.setdefault("narrator_verbosity", "normal")
-        profile_data.setdefault("narrator_style", "neutral")
-
-        logger.debug(f"Successfully retrieved profile for user {user_id}")
-        return {"profile": profile_data}
-    except HTTPException as e:
-        raise e
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/profile")
 async def update_user_profile(
-    profile_update: ProfileUpdate,
-    current_user: str = Depends(get_current_user)
+    profile_update: Dict[str, Any],
+    current_user: dict = Depends(get_current_user)
 ):
     """Update user profile settings"""
     try:
-        logger.info(f"Updating profile for user ID: {current_user}")
-
-        # Get current profile to merge with new settings
-        current_result = supabase.table("users").select("profile").eq("id", current_user).execute()
-
-        if not current_result.data:
-            logger.warning(f"No profile found for user {current_user}")
-            raise HTTPException(status_code=404, detail="User not found")
-
-        current_profile = current_result.data[0].get("profile", {})
-
-        # Ensure required fields are preserved
-        updated_profile = {
-            "signup_secret": current_profile.get("signup_secret", ""),
-            "is_validated_by_email": current_profile.get("is_validated_by_email", False),
-            **profile_update.profile
-        }
-
-        # Update profile in database
-        result = supabase.table("users").update(
-            {"profile": updated_profile}
-        ).eq("id", current_user).execute()
-
-        if not result.data:
-            logger.error(f"Failed to update profile for user {current_user}")
-            raise HTTPException(status_code=404, detail="Failed to update profile")
-
-        logger.info(f"Successfully updated profile for user {current_user}")
-        return {"message": "Profile updated successfully", "profile": updated_profile}
-    except HTTPException as e:
-        raise e
+        service = UserManagementService()
+        result = await service.update_user_profile_settings(
+            str(current_user["id"]),
+            profile_update
+        )
+        return result
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/request-password-reset")
-async def request_password_reset(request: PasswordResetRequest):
-    """Request a password reset. Sends an email with a reset token."""
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     try:
-        # Check if user exists
-        result = supabase.table("users").select("*").eq("email", request.email).execute()
-        if not result.data:
-            # For security, don't reveal whether the email exists
-            return {"message": "If the email exists, a reset link has been sent."}
-
-        user = result.data[0]
-
-        # Generate reset token (UUID)
-        reset_token = str(uuid4())
-        expires_at = datetime.utcnow() + timedelta(hours=24)
-
-        # Update user profile with reset token and expiry
-        profile = user.get('profile', {})
-        profile['reset_token'] = reset_token
-        profile['reset_token_expires'] = expires_at.isoformat()
-
-        # Update user in database
-        supabase.table("users").update({
-            "profile": profile
-        }).eq("id", user['id']).execute()
-
-        # Send reset email
-        email_service = EmailService()
-        await email_service.send_password_reset_email(
-            to_email=request.email,
-            reset_token=reset_token
-        )
-
-        return {"message": "If the email exists, a reset link has been sent."}
-
-    except Exception as e:
-        logger.error(f"Password reset request error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to process password reset request"
-        )
-
-@router.post("/reset-password")
-async def reset_password(request: PasswordResetConfirm):
-    """Reset password using the token from the email."""
-    try:
-        # Find user with this reset token
-        result = supabase.table("users").select("*").execute()
-        user = next(
-            (u for u in result.data if u.get('profile', {}).get('reset_token') == request.token),
-            None
-        )
+        service = UserManagementService()
+        # Supabase will verify the token and return user info
+        user = await service.get_user_by_id(token)
 
         if not user:
             raise HTTPException(
-                status_code=400,
-                detail="Invalid or expired reset token"
+                status_code=401,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Check if token is expired
-        profile = user.get('profile', {})
-        expiry = profile.get('reset_token_expires')
-        if not expiry:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid reset token"
-            )
-
-        expires_at = datetime.fromisoformat(expiry)
-        if datetime.utcnow() > expires_at:
-            raise HTTPException(
-                status_code=400,
-                detail="Reset token has expired"
-            )
-
-        # Hash new password
-        hashed_password = bcrypt.hashpw(
-            request.new_password.encode('utf-8'),
-            bcrypt.gensalt()
-        ).decode('utf-8')
-
-        # Update password and remove reset token
-        profile.pop('reset_token', None)
-        profile.pop('reset_token_expires', None)
-
-        supabase.table("users").update({
-            "password": hashed_password,
-            "profile": profile
-        }).eq("id", user['id']).execute()
-
-        return {"message": "Password has been reset successfully"}
-
-    except HTTPException:
-        raise
+        return user
     except Exception as e:
-        logger.error(f"Password reset error: {str(e)}")
+        logger.error(f"Error getting current user: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to reset password"
+            status_code=401,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )

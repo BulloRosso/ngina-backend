@@ -8,6 +8,7 @@
       "/api/v1/achievements.py",
       "/api/v1/interviews.py",
       "/api/v1/memories.py",
+      "/api/v1/invitation.py",
       "/api/v1/profiles.py",
       "/api/v1/auth.py",
       "/api/v1/chat.py" 
@@ -18,6 +19,7 @@
       "/services/memory.py",
       "/services/sentiment.py",
       "/services/profile.py",
+      "/services/invitations.py",
       "/services/knowledgemanagement.py",
       "/services/email.py",
       "/services/profile.py",
@@ -27,6 +29,6 @@
     "/main.py"
    ],
    "storage_layer": [
-    "/storage_layer_scripts.sql"
+    "/noblivion-schema.sql"
    ]
 }
