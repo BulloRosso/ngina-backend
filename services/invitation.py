@@ -4,7 +4,7 @@ import secrets
 import string
 from typing import List, Optional
 from uuid import UUID
-from models.invitation import Invitation, InvitationCreate, InvitationStatus
+from models.invitation import Invitation, InvitationCreate, InvitationStatus, InvitationWithProfile
 from services.email import EmailService
 from models.profile import Profile
 import logging
@@ -77,39 +77,58 @@ class InvitationService:
                 status_code=500,
                 detail=f"Failed to create invitation: {str(e)}"
             )
-    async def get_invitations_by_creator(
-        self,
-        user_id: UUID,
-        include_expired: bool = False
-    ) -> List[Invitation]:
-        """Get all invitations created by a user"""
+
+    async def get_invitation_stats(self, user_id: UUID) -> dict:
+        """Get statistics about invitations for a user"""
         try:
-            query = self.supabase.table("interview_invitations")\
-                .select(
-                    """
-                    *,
-                    profiles!inner(
-                        first_name,
-                        last_name
-                    )
-                    """
-                )\
-                .eq("created_by", str(user_id))
+            now = datetime.now(timezone.utc)
+            user_id_str = str(user_id)  # Convert UUID to string for Supabase queries
 
-            if not include_expired:
-                query = query.eq("status", InvitationStatus.ACTIVE)
+            # Get total count
+            total_result = self.supabase.table("interview_invitations")\
+                .select("*", count="exact")\
+                .eq("created_by", user_id_str)\
+                .execute()
 
-            result = query.execute()
+            # Get active count
+            active_result = self.supabase.table("interview_invitations")\
+                .select("*", count="exact")\
+                .eq("created_by", user_id_str)\
+                .eq("status", InvitationStatus.ACTIVE.value)\
+                .gte("expires_at", now.isoformat())\
+                .execute()
 
-            return [Invitation(**inv) for inv in result.data]
+            # Get expired count
+            expired_result = self.supabase.table("interview_invitations")\
+                .select("*", count="exact")\
+                .eq("created_by", user_id_str)\
+                .eq("status", InvitationStatus.ACTIVE.value)\
+                .lt("expires_at", now.isoformat())\
+                .execute()
+
+            # Get revoked count
+            revoked_result = self.supabase.table("interview_invitations")\
+                .select("*", count="exact")\
+                .eq("created_by", user_id_str)\
+                .eq("status", InvitationStatus.REVOKED.value)\
+                .execute()
+
+            return {
+                "total_invitations": total_result.count or 0,
+                "active_invitations": active_result.count or 0,
+                "expired_invitations": expired_result.count or 0,
+                "revoked_invitations": revoked_result.count or 0
+            }
 
         except Exception as e:
-            logger.error(f"Error fetching invitations: {str(e)}")
+            logger.error(f"Error getting invitation stats: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to fetch invitations: {str(e)}"
+                detail=f"Failed to get invitation stats: {str(e)}"
             )
+    
 
+    
     async def validate_token(self, token: str) -> Optional[Invitation]:
         """Validate an invitation token and update usage if valid"""
         try:
@@ -185,25 +204,115 @@ class InvitationService:
                 detail=f"Failed to extend invitation: {str(e)}"
             )
 
-    async def revoke_invitation(self, invitation_id: UUID) -> bool:
+    async def get_invitations_by_creator(
+        self,
+        user_id: UUID,
+        include_expired: bool = False,
+        include_profile: bool = False
+    ) -> List[Invitation | InvitationWithProfile]:
+        """
+        Get all invitations created by a user.
+        Args:
+            user_id: The UUID of the user who created the invitations
+            include_expired: Whether to include expired invitations
+            include_profile: Whether to include profile details
+        """
+        try:
+            logger.debug(f"Fetching invitations for user {user_id}")
+
+            # Build base query
+            query = self.supabase.table("interview_invitations")
+
+            # Select fields based on whether we need profile info
+            if include_profile:
+                query = query.select(
+                    "*, profiles!inner(first_name,last_name)"
+                )
+            else:
+                query = query.select("*")
+
+            # Add filters
+            query = query.eq("created_by", str(user_id))
+
+            # If not including expired, only show active invitations
+            if not include_expired:
+                now = datetime.now(timezone.utc)
+                query = query.or_(
+                    f"and(status.eq.{InvitationStatus.ACTIVE.value},expires_at.gt.{now.isoformat()})"
+                )
+
+            # Execute query
+            result = query.execute()
+
+            if not result.data:
+                return []
+
+            invitations = []
+            for inv in result.data:
+                # Update status based on expiry date if not already revoked
+                current_status = inv["status"]
+                expires_at = datetime.fromisoformat(inv["expires_at"].replace('Z', '+00:00'))
+
+                if current_status != InvitationStatus.REVOKED.value:
+                    if expires_at < datetime.now(timezone.utc):
+                        current_status = InvitationStatus.EXPIRED.value
+
+                # Base invitation data
+                invitation_data = {
+                    "id": UUID(inv["id"]),
+                    "profile_id": UUID(inv["profile_id"]),
+                    "created_by": UUID(inv["created_by"]),
+                    "email": inv["email"],
+                    "secret_token": inv["secret_token"],
+                    "expires_at": expires_at,
+                    "last_used_at": inv["last_used_at"],
+                    "status": InvitationStatus(current_status),
+                    "session_count": 0  # We'll implement session counting later
+                }
+
+                if include_profile and "profiles" in inv:
+                    # Create InvitationWithProfile if profile data is included
+                    invitation_data.update({
+                        "profile_first_name": inv["profiles"]["first_name"],
+                        "profile_last_name": inv["profiles"]["last_name"]
+                    })
+                    invitations.append(InvitationWithProfile(**invitation_data))
+                else:
+                    # Create base Invitation otherwise
+                    invitations.append(Invitation(**invitation_data))
+
+            return invitations
+
+        except Exception as e:
+            logger.error(f"Error fetching invitations: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch invitations: {str(e)}"
+            )
+
+    async def revoke_invitation(self, invitation_id: UUID, current_user_id: UUID) -> None:
         """Revoke an invitation"""
         try:
+            # Update the invitation status
             result = self.supabase.table("interview_invitations")\
-                .update({"status": InvitationStatus.REVOKED})\
+                .update({"status": InvitationStatus.REVOKED.value})\
                 .eq("id", str(invitation_id))\
                 .execute()
 
             if not result.data:
-                return False
+                raise HTTPException(
+                    status_code=404,
+                    detail="Invitation not found"
+                )
 
-            invitation = Invitation(**result.data[0])
-            await self._send_revocation_email(invitation)
-
-            return True
-
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error revoking invitation: {str(e)}")
-            return False
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to revoke invitation: {str(e)}"
+            )
 
     async def _update_usage(self, invitation_id: UUID):
         """Update last_used_at and increment session_count"""
@@ -320,3 +429,81 @@ class InvitationService:
 
         except Exception as e:
             logger.error(f"Error sending expiry reminder: {str(e)}")
+            
+    async def get_invitation(self, invitation_id: UUID) -> Invitation:
+        """Get a single invitation by ID"""
+        try:
+            result = self.supabase.table("interview_invitations")\
+                .select("*")\
+                .eq("id", str(invitation_id))\
+                .execute()
+    
+            if not result.data:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Invitation not found"
+                )
+    
+            inv = result.data[0]
+            return Invitation(
+                id=UUID(inv["id"]),
+                profile_id=UUID(inv["profile_id"]),
+                created_by=UUID(inv["created_by"]),  # Add created_by
+                email=inv["email"],
+                secret_token=inv["secret_token"],
+                expires_at=inv["expires_at"],
+                last_used_at=inv["last_used_at"],
+                status=InvitationStatus(inv["status"]),
+                session_count=0  # TODO: Implement session counting
+            )
+    
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching invitation: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch invitation: {str(e)}"
+            )
+    
+    async def revoke_invitation(self, invitation_id: UUID, current_user_id: UUID) -> None:
+        """Revoke an invitation"""
+        try:
+            # First, get the invitation to check if it exists and belongs to the user
+            invitation = await self.get_invitation(invitation_id)
+    
+            # Check if the invitation belongs to the current user
+            if invitation.created_by != current_user_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to revoke this invitation"
+                )
+    
+            # Check if invitation is already revoked
+            if invitation.status == InvitationStatus.REVOKED:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invitation is already revoked"
+                )
+    
+            # Update the invitation status
+            result = self.supabase.table("interview_invitations")\
+                .update({"status": InvitationStatus.REVOKED.value})\
+                .eq("id", str(invitation_id))\
+                .eq("created_by", str(current_user_id))\
+                .execute()
+    
+            if not result.data:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Invitation not found"
+                )
+    
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error revoking invitation: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to revoke invitation: {str(e)}"
+            )

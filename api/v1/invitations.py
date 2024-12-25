@@ -38,23 +38,18 @@ async def create_invitation(
         )
 
 @router.get("/dashboard")
-async def get_invitations_dashboard(
-    include_expired: bool = False,
-    current_user: dict = Depends(get_current_user)
-) -> List[InvitationWithProfile]:
-    """Get all invitations created by the current user"""
-    try:
-        service = InvitationService()
-        return await service.get_invitations_by_creator(
-            user_id=current_user["sub"],
-            include_expired=include_expired
-        )
-    except Exception as e:
-        logger.error(f"Error fetching invitations: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+async def get_invitations(
+    include_expired: bool = Query(False),
+    include_profile: bool = Query(True),
+    current_user: UUID = Depends(get_current_user)
+) -> List[InvitationWithProfile | Invitation]:
+    """Get all invitations for the dashboard"""
+    service = InvitationService()
+    return await service.get_invitations_by_creator(
+        user_id=current_user,
+        include_expired=include_expired,
+        include_profile=include_profile
+    )
 
 @router.get("/validate")
 async def validate_invitation_token(token: str = Query(...)) -> Optional[Invitation]:
@@ -104,30 +99,26 @@ async def extend_invitation(
             detail=str(e)
         )
 
-@router.post("/{invitation_id}/revoke")
+@router.post("/{invitation_id}/revoke", status_code=204)
 async def revoke_invitation(
     invitation_id: UUID,
-    current_user: dict = Depends(get_current_user)
-) -> dict:
+    current_user: UUID = Depends(get_current_user)
+) -> None:
     """Revoke an invitation"""
     try:
         service = InvitationService()
-
-        # Verify ownership
+        # Get invitation first to verify it exists
         invitation = await service.get_invitation(invitation_id)
-        if str(invitation.created_by) != current_user["sub"]:
+
+        # Check ownership using UUID comparison
+        if invitation.created_by != current_user:
             raise HTTPException(
                 status_code=403,
                 detail="Not authorized to revoke this invitation"
             )
 
-        success = await service.revoke_invitation(invitation_id)
-        if not success:
-            raise HTTPException(
-                status_code=404,
-                detail="Invitation not found"
-            )
-        return {"message": "Invitation revoked successfully"}
+        await service.revoke_invitation(invitation_id, current_user)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -138,35 +129,12 @@ async def revoke_invitation(
         )
 
 @router.get("/stats")
-async def get_invitation_stats(
-    current_user: dict = Depends(get_current_user)
-) -> dict:
-    """Get statistics about invitations"""
-    try:
-        service = InvitationService()
-        invitations = await service.get_invitations_by_creator(
-            user_id=current_user["sub"],
-            include_expired=True
-        )
+async def get_stats(current_user: UUID = Depends(get_current_user)) -> dict:
+    """Get invitation statistics for the current user"""
+    service = InvitationService()
+    return await service.get_invitation_stats(current_user)
 
-        active_count = sum(1 for inv in invitations if inv.status == InvitationStatus.ACTIVE)
-        expired_count = sum(1 for inv in invitations if inv.status == InvitationStatus.EXPIRED)
-        total_sessions = sum(inv.session_count for inv in invitations)
-
-        return {
-            "total_invitations": len(invitations),
-            "active_invitations": active_count,
-            "expired_invitations": expired_count,
-            "total_sessions": total_sessions,
-            "average_sessions_per_invitation": total_sessions / len(invitations) if invitations else 0
-        }
-    except Exception as e:
-        logger.error(f"Error getting invitation stats: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
+    
 @router.get("/{invitation_id}/sessions")
 async def get_invitation_sessions(
     invitation_id: UUID,

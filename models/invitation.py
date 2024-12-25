@@ -27,8 +27,7 @@ class Invitation(BaseModel):
     last_used_at: Optional[datetime]
     status: InvitationStatus
     session_count: int
-    created_at: datetime
-    updated_at: datetime
+
 
 class InvitationWithProfile(Invitation):
     profile_first_name: str
