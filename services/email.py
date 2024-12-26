@@ -72,7 +72,23 @@ class EmailService:
             logger.error(f"Error creating mail body: {str(e)}")
             raise
 
+    async def send_bug_report(self, to_email: str, subject: str, html_content: str):
+        """Send bug report email."""
+        try:
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject=f"Bug Report: {subject}",
+                html_content=html_content
+            )
 
+            # Send email
+            return self.mailer.send(mail_body)
+
+        except Exception as e:
+            logger.error(f"Failed to send bug report email: {str(e)}")
+            raise
+            
     async def send_interview_invitation(self, to_email: str, profile_name: str, token: str, expires_at: str):
         try:
             logger.info("Sending interview invitation email")

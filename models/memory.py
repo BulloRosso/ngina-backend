@@ -42,6 +42,7 @@ class Emotion(BaseModel):
 
 class MemoryCreate(BaseModel):
     category: Category
+    original_user_input: Optional[str] = None
     description: str
     time_period: datetime
     location: Optional[Location]

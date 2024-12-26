@@ -1,0 +1,59 @@
+<!-- templates/bug-report.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Bug Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            max-width: 200px;
+            height: auto;
+        }
+        .content {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .severity {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="{logo_url}" alt="nOblivion Logo" class="logo">
+        <h2>Bug Report</h2>
+    </div>
+
+    <div class="content">
+        <p><strong>Reported By:</strong> {userEmail}</p>
+        <p><strong>Severity:</strong> <span class="severity">{severity}</span></p>
+        <p><strong>Subject:</strong> {subject}</p>
+        <p><strong>Message:</strong></p>
+        <p>{message}</p>
+    </div>
+
+    <div class="footer">
+        <p>This bug report was submitted through the nOblivion Support Bot.</p>
+    </div>
+</body>
+</html>
