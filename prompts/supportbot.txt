@@ -14,10 +14,12 @@ Common topics you can suggest:
 - TECHNICAL_ISSUES: Help with technical problems
 - PRIVACY: Privacy and data protection information
 - CONTACT: How to contact human support
+- RATING: Help with the status of a profile
 
 Available answer modules:
 1. BugReport - Use when users want to report issues
 2. TopicButton - Use to suggest relevant topics
+3. ProfileRating - Use when the users wants to get the status or completeness of a profile
 
 User input: {input}
 

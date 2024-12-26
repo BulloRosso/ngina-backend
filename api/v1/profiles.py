@@ -15,9 +15,17 @@ from typing import List
 from models.profile import Profile
 from io import BytesIO
 import logging
+from pydantic import BaseModel
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
+class ProfileRating(BaseModel):
+    completeness: float
+    memories_count: int
+    memories_with_images: int
+    rating: str
+    
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
 # Initialize Supabase client
@@ -231,3 +239,68 @@ async def delete_profile(profile_id: UUID):
         logger.error(f"Error deleting profile: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+class ProfileRating(BaseModel):
+    completeness: float
+    memories_count: int
+    memories_with_images: int
+    rating: str
+
+@router.get("/rating/{profile_id}", response_model=ProfileRating)
+async def get_profile_rating(profile_id: UUID):
+    """Get rating statistics for a profile"""
+    try:
+        logger.debug(f"Fetching rating for profile: {profile_id}")
+        service = ProfileService()
+
+        # Get memory count from memories table
+        memories_result = service.supabase.table('memories')\
+            .select('id', count='exact')\
+            .eq('profile_id', str(profile_id))\
+            .execute()
+
+        memories_count = memories_result.count if memories_result.count else 0
+
+        # Get memories with images by checking image_urls array
+        memories_with_images_result = service.supabase.table('memories')\
+            .select('image_urls')\
+            .eq('profile_id', str(profile_id))\
+            .execute()
+
+        # Count memories that have non-empty image_urls array
+        memories_with_images = sum(
+            1 for memory in memories_with_images_result.data 
+            if memory.get('image_urls') and len(memory['image_urls']) > 0
+        )
+
+        # Calculate completeness as memories_count / 30
+        completeness = min(memories_count / 30, 1.0)
+
+        # Generate rating message
+        rating_message = "Your profile shows good progress. "
+        if memories_count < 30:
+            rating_message += f"Add {30 - memories_count} more memories to reach the minimum for book printing. "
+        else:
+            rating_message += "You have enough memories to print a book! "
+
+        if memories_with_images < memories_count / 2:
+            rating_message += "Consider adding more images to make your memories more vivid."
+        else:
+            rating_message += "Great job including images with your memories!"
+
+        return ProfileRating(
+            completeness=completeness,
+            memories_count=memories_count,
+            memories_with_images=memories_with_images,
+            rating=rating_message
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error getting profile rating: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get profile rating: {str(e)}"
+        )
