@@ -465,20 +465,18 @@ async def verify_mfa(request: MFAVerifyRequest):
             headers["Authorization"] = f"Bearer {request.access_token}"
 
         async with httpx.AsyncClient() as client:
-            # Use existing challenge ID or create new one
-            challenge_id = request.challenge_id
-            if not challenge_id:
-                challenge_response = await client.post(
-                    f"{base_url}/auth/v1/factors/{request.factor_id}/challenge",
-                    headers=headers,
-                    json={}
-                )
-                challenge_response.raise_for_status()
-                challenge_data = challenge_response.json()
-                challenge_id = challenge_data["id"]
-                logger.info(f"Challenge created: {challenge_data}")
+            # Always create a new challenge
+            challenge_response = await client.post(
+                f"{base_url}/auth/v1/factors/{request.factor_id}/challenge",
+                headers=headers,
+                json={}
+            )
+            challenge_response.raise_for_status()
+            challenge_data = challenge_response.json()
+            challenge_id = challenge_data["id"]
+            logger.info(f"Challenge created: {challenge_data}")
 
-            # Verify code
+            # Verify code with new challenge
             verify_response = await client.post(
                 f"{base_url}/auth/v1/factors/{request.factor_id}/verify",
                 headers=headers,
