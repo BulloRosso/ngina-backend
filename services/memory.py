@@ -149,14 +149,14 @@ class MemoryService:
     async def create_memory(cls, memory: MemoryCreate, profile_id: UUID, session_id: UUID):
         """Create a new memory"""
         try:
-            logger.debug(f"Creating memory for profile_id={profile_id}, session_id={session_id}")
-            logger.debug(f"Memory data: {memory.dict()}")
+            logger.info(f"Creating memory for profile_id={profile_id}, session_id={session_id}")
+            logger.info(f"Memory data: {memory.dict()}")
 
             instance = cls.get_instance()
             now = datetime.utcnow().isoformat()
 
             # Log the memory object to see what we're working with
-            logger.debug(f"Memory object: {memory}")
+            logger.info(f"Memory object: {memory}")
 
             # Create the data dictionary with full error handling
             try:
@@ -189,7 +189,7 @@ class MemoryService:
                 if hasattr(memory, 'audio_url') and memory.audio_url:
                     data["audio_url"] = memory.audio_url
 
-                logger.debug(f"Prepared data for insert: {data}")
+                logger.info(f"Prepared data for insert: {data}")
             except Exception as e:
                 logger.error(f"Error preparing memory data: {str(e)}")
                 logger.error(traceback.format_exc())

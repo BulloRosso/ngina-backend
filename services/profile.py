@@ -36,6 +36,12 @@ class ProfileService:
             pronoun = "him" if profile_data["gender"].lower() == "male" else "her"
             profile_context = f"The main character of our memories is {profile_data['first_name']} {profile_data['last_name']} which is of {profile_data['gender']} gender. When rewriting memories reference to {pronoun} as {profile_data['first_name']}."
 
+            # Get narrator settings directly from profile metadata
+            metadata = profile_data.get('metadata', {})
+            narrator_perspective = metadata.get('narrator_perspective', 'ego')
+            narrator_style = metadata.get('narrator_style', 'neutral')
+            narrator_verbosity = metadata.get('narrator_verbosity', 'normal')
+            
             # Create single session for all initial memories
             session_data = {
                 "id": str(uuid4()),
@@ -62,41 +68,54 @@ class ProfileService:
 
             # Create birth memory
             try:
-                city = profile_data['place_of_birth'].split(',')[0].strip()
-                country = profile_data['place_of_birth'].split(',')[-1].strip()
+                # Handle place of birth parsing with better validation
+                place_parts = profile_data['place_of_birth'].split(',')
+                if len(place_parts) >= 2:
+                    city = place_parts[0].strip()
+                    country = place_parts[-1].strip()
+                else:
+                    city = profile_data['place_of_birth'].strip()
+                    country = "Deutschland" if language == "de" else "Germany"
 
-                birth_description = {
-                    "de": f"{profile_data['first_name']} {profile_data['last_name']} wurde in {profile_data['place_of_birth']} geboren",
-                    "en": f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}"
-                }.get(language, f"{profile_data['first_name']} {profile_data['last_name']} was born in {profile_data['place_of_birth']}")
+                logger.info(f"Parsed location - city: {city}, country: {country}")
 
+                first_name = profile_data['first_name']
+                last_name = profile_data['last_name']
+                place = profile_data['place_of_birth']
+
+                # Create birth description based on narrator perspective
+                if narrator_perspective == 'ego':
+                    birth_description = {
+                        "de": f"Ich wurde in {place} geboren",
+                        "en": f"I was born in {place}"
+                    }.get(language, f"I was born in {place}")
+                else:  # third person
+                    birth_description = {
+                        "de": f"{first_name} {last_name} wurde in {place} geboren",
+                        "en": f"{first_name} {last_name} was born in {place}"
+                    }.get(language, f"{first_name} {last_name} was born in {place}")
+
+                logger.info(f"Created birth description: {birth_description}")
+                
                 birth_memory = MemoryCreate(
                     category=Category.CHILDHOOD,
                     description=birth_description,
                     time_period=datetime.strptime(profile_data['date_of_birth'], "%Y-%m-%d"),
                     location=Location(
-                        name=profile_data['place_of_birth'],
+                        name=place,
                         city=city,
                         country=country,
                         description="Geburtsort" if language == "de" else "Place of birth"
                     )
                 )
+                logger.info(f"Created birth memory object: {birth_memory}")
 
-                await MemoryService.create_memory(birth_memory, profile_id, session_id)
-                logger.info("Birth memory created successfully")
+                logger.info(f"About to call MemoryService.create_memory with profile_id={profile_id}, session_id={session_id}")
+                memory_id = await MemoryService.create_memory(birth_memory, profile_id, session_id)
+                logger.info(f"=== Birth memory created successfully with ID: {memory_id} ===")
 
             except Exception as e:
                 logger.error(f"Error creating birth memory: {str(e)}")
-
-            # Get user settings using UserManagementService
-            # user_management = UserManagementService()
-            # user_result = await user_management.get_user_profile(str(profile_id))
-            user_profile = {} # user_result.get('profile', {}) if user_result else {}
-
-            # Get narrative settings with defaults
-            narrator_perspective = user_profile.get("narrator_perspective", "ego")
-            narrator_style = user_profile.get("narrator_style", "neutral")
-            narrator_verbosity = user_profile.get("narrator_verbosity", "normal")
 
             # Convert perspective setting to prompt text
             perspective_text = "in first person view" if narrator_perspective == "ego" else "in third person view"
@@ -353,6 +372,24 @@ class ProfileService:
                 profile_data['updated_at'] = datetime.fromisoformat(
                     profile_data['updated_at']
                 )
+
+            # Ensure metadata exists and contains narrator settings
+            if not profile_data.get('metadata'):
+                profile_data['metadata'] = {}
+
+            metadata = profile_data['metadata']
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            # Only set defaults if values don't exist
+            if 'narrator_style' not in metadata:
+                metadata['narrator_style'] = 'neutral'
+            if 'narrator_perspective' not in metadata:
+                metadata['narrator_perspective'] = 'ego'
+            if 'narrator_verbosity' not in metadata:
+                metadata['narrator_verbosity'] = 'normal'
+
+            profile_data['metadata'] = metadata
 
             return Profile(**profile_data)
 

@@ -203,8 +203,8 @@ async def get_profile(profile_id: UUID):
     """Get a profile by ID"""
     try:
         logger.debug(f"Fetching profile with ID: {profile_id}")
-        service = ProfileService()  # Create instance
-        profile = await service.get_profile(profile_id)  # Call instance method
+        service = ProfileService()
+        profile = await service.get_profile(profile_id)
 
         if not profile:
             logger.debug(f"Profile not found: {profile_id}")

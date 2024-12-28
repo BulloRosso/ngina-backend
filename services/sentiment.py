@@ -131,11 +131,12 @@ class EmpatheticInterviewer:
                 raise Exception("Profile not found")
 
             profile_data = profile_basics.data[0]
-            
-            # Get narrative settings with defaults
-            narrator_perspective = profile_settings.get("narrator_perspective", "ego")
-            narrator_style = profile_settings.get("narrator_style", "neutral")
-            narrator_verbosity = profile_settings.get("narrator_verbosity", "normal")
+            metadata = profile_data.get('metadata', {})
+
+            # Get narrative settings from metadata
+            narrator_perspective = metadata.get('narrator_perspective', 'ego')
+            narrator_style = metadata.get('narrator_style', 'neutral')
+            narrator_verbosity = metadata.get('narrator_verbosity', 'normal')
 
             logger.debug(f"Using profile settings - perspective: {narrator_perspective}, style: {narrator_style}, verbosity: {narrator_verbosity}")
 
