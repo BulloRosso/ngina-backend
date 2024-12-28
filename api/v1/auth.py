@@ -31,6 +31,7 @@ class SignupRequest(BaseModel):
     last_name: str
     email: str
     password: str
+    enable_mfa: bool = True
 
 class VerificationRequest(BaseModel):
     code: str
@@ -39,6 +40,9 @@ class VerificationRequest(BaseModel):
 class PasswordResetRequest(BaseModel):
     email: str
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+    
 class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str
@@ -198,9 +202,35 @@ async def resend_confirmation(request: EmailRequest):
         return {
             "message": "If the email exists, a new confirmation link has been sent."
         }
+
+@router.post("/refresh")
+async def refresh_token(request: RefreshTokenRequest):
+    try:
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+
+        # Refresh the session
+        refresh_response = supabase_client.auth.refresh_session({
+            "refresh_token": request.refresh_token
+        })
+
+        if not refresh_response.session:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+        return {
+            "access_token": refresh_response.session.access_token,
+            "refresh_token": refresh_response.session.refresh_token,
+            "token_type": "bearer"
+        }
+    except Exception as e:
+        logger.error(f"Token refresh error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Could not refresh token")
         
 @router.post("/signup")
 async def signup(request: SignupRequest):
+    logger.info(f"Signup request data: {request}")
     try:
         # Initialize Supabase client
         supabase_client = create_client(
@@ -216,7 +246,8 @@ async def signup(request: SignupRequest):
             "options": {
                 "data": {
                     "first_name": request.first_name,
-                    "last_name": request.last_name
+                    "last_name": request.last_name,
+                    "mfa_enabled": request.enable_mfa
                 }
             }
         })
@@ -235,12 +266,52 @@ async def signup(request: SignupRequest):
 
         return {
             "message": "Signup successful. Please check your email for confirmation link.",
-            "user": signup_response.user
+            "email": request.email
         }
     except Exception as e:
         logger.error(f"Signup error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/enable-mfa")
+async def enable_mfa(
+    current_user: dict = Depends(get_current_user)
+):
+    """Enable MFA for a user who previously had it disabled"""
+    try:
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+
+        # Get new QR code for MFA setup
+        qr_data = await get_mfa_qr_code(
+            client=supabase_client,
+            user_email=current_user["email"]
+        )
+
+        if not qr_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to generate MFA setup data"
+            )
+
+        # Update user metadata to reflect MFA enabled
+        await supabase_client.auth.admin.update_user_by_id(
+            current_user["id"],
+            {"data": {"mfa_enabled": True}}
+        )
+
+        return {
+            "factor_id": qr_data["factor_id"],
+            "qr_code": qr_data["qr_code"],
+            "secret": qr_data["secret"],
+            "needs_setup": True
+        }
+
+    except Exception as e:
+        logger.error(f"Error enabling MFA: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+        
 @router.get("/mfa-factors")
 async def list_mfa_factors():
     try:
@@ -283,55 +354,14 @@ async def login(login_data: LoginRequest):
             mfa_required = False
             mfa_data = None
 
-            try:
-                # Get current MFA settings
-                aal = supabase_client.auth.mfa.get_authenticator_assurance_level()
-                logger.info(f"Current AAL: {aal}")
+            # Check if this is first login after verification and MFA was enabled during signup
+            if is_validated and user.user_metadata.get('mfa_enabled', False):
+                # Check if user already has MFA set up
                 factors = supabase_client.auth.mfa.list_factors()
-                logger.info(f"MFA factors: {factors}")
+                existing_factors = factors.all if factors else []
 
-                existing_factors = factors.all
-
-                if existing_factors:
-                    unverified_factor = next((f for f in existing_factors if f.status == 'unverified'), None)
-                    factor_to_use = unverified_factor or existing_factors[0]
-
-                    if unverified_factor:
-                        # For unverified factor, get new QR code
-                        try:
-                            qr_data = await get_mfa_qr_code(
-                                client=supabase_client, 
-                                user_email=user.email
-                            )
-                            mfa_required = True
-                            mfa_data = {
-                                "factor_id": qr_data["factor_id"],
-                                "qr_code": qr_data["qr_code"],
-                                "secret": qr_data["secret"],
-                                "needs_setup": True
-                            }
-                        except Exception as qr_error:
-                            logger.error(f"Error getting QR code: {str(qr_error)}")
-                            mfa_required = False
-                    else:
-                        # For verified factor, create challenge
-                        try:
-                            challenge_data = await create_mfa_challenge(
-                                client=supabase_client,
-                                factor_id=factor_to_use.id
-                            )
-                            if challenge_data and 'id' in challenge_data:
-                                mfa_required = True
-                                mfa_data = {
-                                    "challenge_id": challenge_data['id'],
-                                    "factor_id": factor_to_use.id,
-                                    "needs_setup": False
-                                }
-                        except Exception as challenge_error:
-                            logger.error(f"MFA challenge error: {str(challenge_error)}")
-                            mfa_required = False
-                else:
-                    # No existing factors - create new one
+                if not existing_factors:
+                    # First login and no MFA set up yet - generate new QR code
                     try:
                         qr_data = await get_mfa_qr_code(
                             client=supabase_client,
@@ -344,19 +374,36 @@ async def login(login_data: LoginRequest):
                             "secret": qr_data["secret"],
                             "needs_setup": True
                         }
-                        logger.info(f"New MFA factor created: {mfa_data}")
-                    except Exception as enroll_error:
-                        logger.error(f"MFA enrollment error: {str(enroll_error)}")
+                        logger.info(f"Generated new MFA setup for verified user: {mfa_data}")
+                    except Exception as mfa_error:
+                        logger.error(f"Error setting up MFA: {str(mfa_error)}")
+                        # Don't fail login if MFA setup fails
                         mfa_required = False
-
-            except Exception as e:
-                logger.error(f"Error checking MFA status: {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
+                else:
+                    # User has existing MFA factors
+                    existing_factor = existing_factors[0]
+                    if existing_factor.status == 'verified':
+                        # MFA already set up - create challenge
+                        try:
+                            challenge_data = await create_mfa_challenge(
+                                client=supabase_client,
+                                factor_id=existing_factor.id
+                            )
+                            if challenge_data and 'id' in challenge_data:
+                                mfa_required = True
+                                mfa_data = {
+                                    "challenge_id": challenge_data['id'],
+                                    "factor_id": existing_factor.id,
+                                    "needs_setup": False
+                                }
+                        except Exception as challenge_error:
+                            logger.error(f"MFA challenge error: {str(challenge_error)}")
+                            mfa_required = False
 
             # Always return the session token, even with MFA required
             response_data = {
-                "access_token": session.access_token,  # Changed this line
+                "access_token": session.access_token,
+                "refresh_token": session.refresh_token,
                 "token_type": "bearer",
                 "user": {
                     "id": user.id,
@@ -381,7 +428,6 @@ async def login(login_data: LoginRequest):
                         "message": "Please confirm your email address before logging in"
                     }
                 )
-            # Handle other specific AuthApiError cases if needed
             logger.error(f"Supabase auth error: {str(e)}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -392,19 +438,6 @@ async def login(login_data: LoginRequest):
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=401, detail="Invalid credentials")
-
-@router.post("/verify-email")
-async def verify_email(verification_data: VerificationRequest):
-    try:
-        service = UserManagementService()
-        verified = await service.verify_email(
-            UUID(verification_data.user_id),
-            verification_data.code
-        )
-        return {"verified": verified}
-    except Exception as e:
-        logger.error(f"Verification error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/validation-status/{user_id}")
 async def check_validation_status(user_id: str):
