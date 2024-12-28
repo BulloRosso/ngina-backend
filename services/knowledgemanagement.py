@@ -27,6 +27,8 @@ from neo4j_graphrag.experimental.components.text_splitters.fixed_size_splitter i
 import os
 import asyncio
 import time
+from openai import OpenAI
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +48,68 @@ class KnowledgeManagement:
     """Class for managing knowledge management"""
     def __init__(self):
         self.memory_service = MemoryService()
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    async def translate_text(self, text: str, target_language: str) -> str:
+        """Translate text to the target language"""
+        try:
+            system_prompt = "You are a professional translator. Return your translation as a JSON object with a 'translation' field."
+            user_prompt = f"Translate the following text to {target_language} and return as JSON: {text}"
+
+            result = await self.from_ai(system_prompt, user_prompt)
+            try:
+                # Parse JSON response and extract translation
+                parsed = json.loads(result)
+                return parsed.get('translation', text)  # Fallback to original text if parsing fails
+            except json.JSONDecodeError:
+                logger.error("Failed to parse JSON response from translation")
+                return text  # Fallback to original text
+        except Exception as e:
+            logger.error(f"Translation error: {str(e)}")
+            raise
     
-    # In services/knowledgemanagement.py
+    async def from_ai(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.3
+    ) -> str:
+        """
+        Helper to use AI for simple tasks
+
+        Args:
+            system_prompt: The system prompt for the AI
+            user_prompt: The user prompt for the AI
+            temperature: Controls randomness in the response (0.0-1.0)
+
+        Returns:
+            str: The AI response text
+
+        Raises:
+            Exception: If there's an error communicating with the AI service
+        """
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt
+                    },
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=temperature
+            )
+
+            result = response.choices[0].message.content
+            logger.info(f"AI response: {result}")
+            return str(result)
+
+        except Exception as e:
+            logger.error(f"AI service error: {str(e)}")
+            raise
+
     @staticmethod
     async def analyze_response(
         response_text: str, 

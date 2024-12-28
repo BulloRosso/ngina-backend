@@ -17,6 +17,7 @@ from io import BytesIO
 import logging
 from pydantic import BaseModel
 from typing import List, Optional
+from services.knowledgemanagement import KnowledgeManagement
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,7 @@ class ProfileRating(BaseModel):
     rating: str
 
 @router.get("/rating/{profile_id}", response_model=ProfileRating)
-async def get_profile_rating(profile_id: UUID):
+async def get_profile_rating(profile_id: UUID, language: str = Query(default="en")):
     """Get rating statistics for a profile"""
     try:
         logger.debug(f"Fetching rating for profile: {profile_id}")
@@ -287,6 +288,11 @@ async def get_profile_rating(profile_id: UUID):
             rating_message += "Consider adding more images to make your memories more vivid."
         else:
             rating_message += "Great job including images with your memories!"
+
+        # Translate the message if language is not English
+        if language != "en":
+            ai_service = KnowledgeManagement()
+            rating_message = await ai_service.translate_text(rating_message, language)
 
         return ProfileRating(
             completeness=completeness,

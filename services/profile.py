@@ -26,6 +26,7 @@ class ProfileService:
         self.openai_client = openai.Client(
             api_key=os.getenv("OPENAI_API_KEY")
         )
+        self.user_management_service = UserManagementService()
 
     async def parse_backstory(self, profile_id: UUID, backstory: str, profile_data: Dict[str, Any], language: str = "de") -> None:
         """Parse memories from backstory and create initial memories in the specified language"""
