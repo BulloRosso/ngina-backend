@@ -1,5 +1,7 @@
 # api/v1/auth.py
 from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import Response as FastAPIResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from typing import Dict, Optional, Any
 from pydantic import BaseModel
@@ -330,7 +332,7 @@ async def list_mfa_factors():
         raise HTTPException(status_code=400, detail=str(e))
         
 @router.post("/login")
-async def login(login_data: LoginRequest):
+async def login(login_data: LoginRequest, response: FastAPIResponse):
     try:
         supabase_client = create_client(
             supabase_url=os.getenv("SUPABASE_URL"),
@@ -400,10 +402,19 @@ async def login(login_data: LoginRequest):
                             logger.error(f"MFA challenge error: {str(challenge_error)}")
                             mfa_required = False
 
+            # Set refresh token in HTTP-Only cookie
+            response.set_cookie(
+                key="refresh_token",
+                value=session.refresh_token,
+                httponly=True,
+                secure=True,  # for HTTPS
+                samesite='lax',
+                max_age=3600 * 24 * 30  # 30 days
+            )
+            
             # Always return the session token, even with MFA required
             response_data = {
                 "access_token": session.access_token,
-                "refresh_token": session.refresh_token,
                 "token_type": "bearer",
                 "user": {
                     "id": user.id,
