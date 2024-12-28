@@ -12,6 +12,7 @@ from supabase import create_client, Client
 from datetime import datetime
 from httpx import Response
 import httpx
+from services.email import EmailService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -163,17 +164,40 @@ async def get_mfa_qr_code(client, user_email: str) -> dict:
 @router.post("/signup")
 async def signup(request: SignupRequest):
     try:
-        service = UserManagementService()
-        user = await service.create_user(UserData(
-            first_name=request.first_name,
-            last_name=request.last_name,
-            email=request.email,
-            password=request.password
-        ))
+        # Initialize Supabase client
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+
+        # Generate signup link instead of directly creating user
+        signup_response = supabase_client.auth.admin.generate_link({
+            "type": "signup",
+            "email": request.email,
+            "password": request.password,
+            "options": {
+                "data": {
+                    "first_name": request.first_name,
+                    "last_name": request.last_name
+                }
+            }
+        })
+
+        # Get the confirmation link from the response
+        confirmation_link = signup_response.properties.action_link
+
+        # Initialize email service
+        email_service = EmailService()
+
+        # Send confirmation email
+        await email_service.send_confirmation_email(
+            to_email=request.email,
+            confirmation_link=confirmation_link
+        )
 
         return {
-            "user": user,
-            "message": "User created successfully"
+            "message": "Signup successful. Please check your email for confirmation link.",
+            "user": signup_response.user
         }
     except Exception as e:
         logger.error(f"Signup error: {str(e)}")

@@ -88,6 +88,31 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send bug report email: {str(e)}")
             raise
+
+    async def send_confirmation_email(self, to_email: str, confirmation_link: str):
+        """Send email confirmation link to user."""
+        try:
+            # Read template
+            template_path = Path("templates/email-confirmation.html")
+            async with aiofiles.open(template_path, "r") as f:
+                html_content = await f.read()
+
+            # Replace placeholders
+            html_content = html_content.replace("{confirmation_url}", confirmation_link)
+
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject="Confirm your Noblivion account",
+                html_content=html_content
+            )
+
+            # Send email
+            return self.mailer.send(mail_body)
+
+        except Exception as e:
+            logger.error(f"Failed to send confirmation email: {str(e)}")
+            raise
             
     async def send_interview_invitation(self, to_email: str, profile_name: str, token: str, expires_at: str):
         try:
