@@ -11,9 +11,16 @@ from services.memory import MemoryService
 import openai
 from uuid import UUID, uuid4
 from services.usermanagement import UserManagementService
+from services.knowledgemanagement import KnowledgeManagement
 
 logger = logging.getLogger(__name__)
 
+class ProfileRating(BaseModel):
+    completeness: float
+    memories_count: int
+    memories_with_images: int
+    rating: str
+    
 # Service Class
 class ProfileService:
     table_name = "profiles"
@@ -421,6 +428,64 @@ class ProfileService:
         except Exception as e:
             raise Exception(f"Failed to update profile: {str(e)}")
 
+    async def get_profile_rating(self, profile_id: UUID, language: str = "en") -> ProfileRating:
+        """Get rating statistics for a profile"""
+        try:
+            logger.debug(f"Fetching rating for profile: {profile_id}")
+
+            # Get memory count from memories table
+            memories_result = self.supabase.table('memories')\
+                .select('id', count='exact')\
+                .eq('profile_id', str(profile_id))\
+                .execute()
+
+            memories_count = memories_result.count if memories_result.count else 0
+
+            # Get memories with images by checking image_urls array
+            memories_with_images_result = self.supabase.table('memories')\
+                .select('image_urls')\
+                .eq('profile_id', str(profile_id))\
+                .execute()
+
+            # Count memories that have non-empty image_urls array
+            memories_with_images = sum(
+                1 for memory in memories_with_images_result.data 
+                if memory.get('image_urls') and len(memory['image_urls']) > 0
+            )
+
+            # Calculate completeness as memories_count / 30
+            completeness = min(memories_count / 30, 1.0)
+
+            # Generate rating message
+            rating_message = "Your profile shows good progress. "
+            if memories_count < 30:
+                rating_message += f"Add {30 - memories_count} more memories to reach the minimum for book printing. "
+            else:
+                rating_message += "You have enough memories to print a book! "
+
+            if memories_with_images < memories_count / 2:
+                rating_message += "Consider adding more images to make your memories more vivid."
+            else:
+                rating_message += "Great job including images with your memories!"
+
+            # Translate the message if language is not English
+            if language != "en":
+                from services.knowledgemanagement import KnowledgeManagement
+                ai_service = KnowledgeManagement()
+                rating_message = await ai_service.translate_text(rating_message, language)
+
+            return ProfileRating(
+                completeness=completeness,
+                memories_count=memories_count,
+                memories_with_images=memories_with_images,
+                rating=rating_message
+            )
+
+        except Exception as e:
+            logger.error(f"Error getting profile rating: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+            
     @staticmethod
     async def delete_profile(profile_id: UUID4) -> bool:
         """
