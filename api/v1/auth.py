@@ -8,7 +8,7 @@ import logging
 import os
 from services.usermanagement import UserManagementService, UserData
 from dependencies.auth import get_current_user
-from supabase import create_client, Client
+from supabase import create_client, Client, AuthApiError
 from datetime import datetime
 from httpx import Response
 import httpx
@@ -23,6 +23,9 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class EmailRequest(BaseModel):
+    email: str
+    
 class SignupRequest(BaseModel):
     first_name: str
     last_name: str
@@ -161,6 +164,41 @@ async def get_mfa_qr_code(client, user_email: str) -> dict:
         logger.error(traceback.format_exc())
         raise e
 
+@router.post("/resend-confirmation")
+async def resend_confirmation(request: EmailRequest):
+    try:
+        supabase_client = create_client(
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_key=os.getenv("SUPABASE_KEY")
+        )
+
+        # Generate new signup link for existing user
+        signup_response = supabase_client.auth.admin.generate_link({
+            "type": "signup",
+            "email": request.email,
+        })
+
+        # Get the new confirmation link
+        confirmation_link = signup_response.properties.action_link
+
+        # Initialize email service and send new confirmation email
+        email_service = EmailService()
+        await email_service.send_confirmation_email(
+            to_email=request.email,
+            confirmation_link=confirmation_link
+        )
+
+        return {
+            "message": "Confirmation email resent successfully",
+            "email": request.email
+        }
+    except Exception as e:
+        logger.error(f"Error resending confirmation email: {str(e)}")
+        # Don't expose whether the email exists or not
+        return {
+            "message": "If the email exists, a new confirmation link has been sent."
+        }
+        
 @router.post("/signup")
 async def signup(request: SignupRequest):
     try:
@@ -334,12 +372,21 @@ async def login(login_data: LoginRequest):
             logger.info(f"Login response data: {response_data}")
             return response_data
 
-        except Exception as e:
+        except AuthApiError as e:
+            if "Email not confirmed" in str(e):
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "code": "email_not_confirmed",
+                        "message": "Please confirm your email address before logging in"
+                    }
+                )
+            # Handle other specific AuthApiError cases if needed
             logger.error(f"Supabase auth error: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
         import traceback
