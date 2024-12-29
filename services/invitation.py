@@ -193,7 +193,15 @@ class InvitationService:
             invitation = Invitation(**result.data[0])
 
             # Send notification email
-            await self._send_extension_email(invitation)
+            await self.email_service.send_email(
+                template_name='invitation-extended',
+                to_email=invitation.email,
+                subject_key='subject',
+                locale='en',
+                subject='Invitation extended',
+                interview_url=f"{os.getenv('FRONTEND_URL')}/interview-token?token={invitation.secret_token}",
+                expiry_date=new_expiry.strftime("%B %d, %Y")
+            )
 
             return invitation
 
@@ -335,21 +343,30 @@ class InvitationService:
         if profile_data:
             logger.info(profile_data)
             profile = Profile(**profile_data)
-            await self.email_service.send_interview_invitation(
+            await self.email_service.send_email(
+                template_name='interview-invitation',
                 to_email=invitation.email,
+                subject_key='subject',
+                locale='en',
+                subject='Interview Invitation',
                 profile_name=f"{profile.first_name} {profile.last_name}",
-                token=invitation.secret_token,
-                expires_at=invitation.expires_at
+                interview_url=f"{os.getenv('FRONTEND_URL')}/interview-token?token={invitation.secret_token}",
+                expiry_date=invitation.expires_at.strftime("%B %d, %Y")
             )
+
 
     async def _send_expiry_reminder(self, invitation: Invitation):
         """Send reminder email about upcoming expiry"""
         profile = await self._get_profile(invitation.profile_id)
         if profile:
-            await self.email_service.send_expiry_reminder(
+            await self.email_service.send_email(
+                template_name='expiry-reminder',
                 to_email=invitation.email,
+                subject_key='subject',
+                locale='en',
+                subject='Interview Expiry Reminder',
                 profile_name=f"{profile.first_name} {profile.last_name}",
-                expires_at=invitation.expires_at
+                expiry_date=invitation.expires_at.strftime("%B %d, %Y")
             )
 
     async def _get_profile(self, profile_id: UUID):
@@ -419,10 +436,13 @@ class InvitationService:
                 return
 
             # Send reminder email
-            await self.email_service.send_expiry_reminder(
+            await self.email_service.send_email(
+                template_name='expiry-reminder',
                 to_email=invitation.email,
-                profile_name=f"{invitation.profile_first_name} {invitation.profile_last_name}",
-                expires_at=invitation.expires_at
+                subject_key='subject',
+                locale='en',
+                subject='Interview Expiry Reminder',
+                expiry_date=invitation.expires_at.strftime("%B %d, %Y")
             )
 
             logger.info(f"Sent expiry reminder for invitation {invitation.id}")

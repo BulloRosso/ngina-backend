@@ -1,37 +1,23 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        /* Same styles as above */
-    </style>
-</head>
-<body>
-    <div class="header">
-        <img src="cid:noblivion-logo" alt="Noblivion Logo">
-        <h1 style="color: #fff; margin: 10px 0;">Your Interview Access Has Been Extended</h1>
+{% include '_header.html' %}
+
+<div class="content">
+    <p>{{ t('common.greeting') }}</p>
+
+    <p>{{ t('extension_message', profile_name=profile_name) }}</p>
+
+    <div class="expiry-note">
+        <strong>{{ t('new_expiry_label') }}:</strong> {{ expiry_date }}
     </div>
 
-    <div class="content">
-        <p>Hello!</p>
+    <p>{{ t('continue_message') }}</p>
 
-        <p>Good news! Your interview access for <strong>{profile_name}</strong> has been extended.</p>
+    <center>
+        <a href="{{ interview_url }}" class="button">
+            {{ t('continue_button') }}
+        </a>
+    </center>
 
-        <div class="expiry-note">
-            <strong>New expiry date:</strong> {expiry_date}
-        </div>
+    <p>{{ t('value_message') }}</p>
+</div>
 
-        <p>You can continue sharing memories and stories using the same link:</p>
-
-        <center>
-            <a href="{interview_url}" class="button">Continue Interview</a>
-        </center>
-
-        <p>Your contributions are valuable, and we look forward to preserving more of your memories.</p>
-    </div>
-
-    <div class="footer">
-        <p>This is an automated message from Noblivion - Your experiences are precious</p>
-    </div>
-</body>
-</html>
+{% include '_footer.html' %}

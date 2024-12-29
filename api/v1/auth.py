@@ -189,9 +189,14 @@ async def resend_confirmation(request: EmailRequest):
 
         # Initialize email service and send new confirmation email
         email_service = EmailService()
-        await email_service.send_confirmation_email(
+        
+        await email_service.send_email(
+            template_name='email-confirmation',
             to_email=request.email,
-            confirmation_link=confirmation_link
+            subject_key='subject',
+            locale='en',
+            subject='Confirm your email',
+            confirmation_url=confirmation_link
         )
 
         return {
@@ -261,9 +266,13 @@ async def signup(request: SignupRequest):
         email_service = EmailService()
 
         # Send confirmation email
-        await email_service.send_confirmation_email(
+        await email_service.send_email(
+            template_name='email-confirmation',
             to_email=request.email,
-            confirmation_link=confirmation_link
+            subject_key='subject',
+            locale='en',
+            subject='nOblvion: Please confirm your email',
+            confirmation_url=confirmation_link
         )
 
         return {

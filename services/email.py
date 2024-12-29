@@ -2,15 +2,20 @@
 import os
 from mailersend import emails
 from pathlib import Path
-from dotenv import load_dotenv
 import logging
 import datetime
-import aiofiles
+import json
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 logger = logging.getLogger(__name__)
 
 class EmailService:
     def __init__(self):
+        # Set default env variables for testing
+        os.environ.setdefault('MAILERSEND_API_KEY', 'your-api-key')
+        os.environ.setdefault('MAILERSEND_SENDER_EMAIL', 'noreply@noblivion.com')
+        os.environ.setdefault('FRONTEND_URL', 'https://noblivion.com')
+
         self.api_key = os.getenv('MAILERSEND_API_KEY')
         self.sender_domain = os.getenv('MAILERSEND_SENDER_EMAIL')
         self.frontend_url = os.getenv('FRONTEND_URL')
@@ -23,31 +28,129 @@ class EmailService:
             raise ValueError("FRONTEND_URL not found in environment")
 
         self.mailer = emails.NewEmail(self.api_key)
+
+        # Initialize Jinja2 environment
+        self.jinja_env = Environment(
+            loader=FileSystemLoader('templates'),
+            autoescape=select_autoescape(['html', 'xml'])
+        )
+
+        # Load translations
+        self.translations = self._load_translations()
+
         logger.debug(f"Email service initialized with frontend URL: {self.frontend_url}")
 
-    def _create_mail_body(
+    def _load_translations(self):
+        """Load all translation files from the i18n directory"""
+        translations = {}
+        i18n_path = Path('i18n')
+
+        logger.info(f"Loading translations from: {i18n_path.absolute()}")
+
+        if not i18n_path.exists():
+            logger.warning("i18n directory not found")
+            i18n_path.mkdir(parents=True)
+
+        for locale_file in i18n_path.glob('*.json'):
+            try:
+                logger.info(f"Loading translation file: {locale_file}")
+                with open(locale_file, 'r', encoding='utf-8') as f:
+                    translations[locale_file.stem] = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading translation file {locale_file}: {str(e)}")
+
+        if not translations:
+            logger.error("No translation files found!")
+
+        return translations
+
+    def _get_translation(self, namespace: str, key: str, locale: str = 'en', **kwargs) -> str:
+        """Get translated string for given namespace and key"""
+        try:
+            translation = self.translations.get(locale, {}).get(namespace, {}).get(
+                key, 
+                self.translations['en'].get(namespace, {}).get(key, f"{namespace}.{key}")
+            )
+            # Format the translation with provided variables
+            return translation.format(**kwargs) if kwargs else translation
+        except Exception as e:
+            logger.error(f"Translation error for {locale}.{namespace}.{key}: {str(e)}")
+            return f"{namespace}.{key}"
+
+    def _render_template(self, template_name: str, locale: str = 'en', **kwargs) -> str:
+        """Render a template with translations and variables"""
+        try:
+            template = self.jinja_env.get_template(f"{template_name}.html")
+
+            # Get namespace from template name
+            namespace = template_name.replace('-', '_')
+
+            # Create translation function that handles absolute paths and parameters
+            def translate(key, **trans_kwargs):
+                # If the key starts with 'common', use it as absolute path
+                if key.startswith('common.'):
+                    return self._get_translation('common', key.split('.')[1], locale, **trans_kwargs)
+                # Otherwise, use the template namespace
+                return self._get_translation(namespace, key, locale, **trans_kwargs)
+
+            # Add common variables
+            common_vars = {
+                'logo_url': f"{self.frontend_url}/conch-logo-small.png",
+                't': translate,  # Translation function
+                'frontend_url': self.frontend_url,
+                **kwargs  # Add all template variables to the root context
+            }
+
+            return template.render(**common_vars)
+
+        except Exception as e:
+            logger.error(f"Template rendering error: {str(e)}")
+            raise
+
+    async def send_email(
         self,
+        template_name: str,
         to_email: str,
-        subject: str,
-        html_content: str
-    ) -> dict:
+        subject_key: str,
+        locale: str = 'en',
+        **template_vars
+    ):
+        """Generic email sending method that supports any template and variables"""
+        try:
+            logger.info(f"Sending {template_name} email to {to_email} in {locale}")
+
+            namespace = template_name.replace('-', '_')
+            subject = self._get_translation(namespace, subject_key, locale, **template_vars)
+
+            html_content = self._render_template(
+                template_name,
+                locale=locale,
+                **template_vars
+            )
+
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject=subject,
+                html_content=html_content
+            )
+
+            return self.mailer.send(mail_body)
+
+        except Exception as e:
+            logger.error(f"Failed to send {template_name} email: {str(e)}")
+            raise
+
+    def _create_mail_body(self, to_email: str, subject: str, html_content: str) -> dict:
         """Create a standardized mail body for MailerSend"""
         try:
-            # Replace logo URL in template
-            logo_url = f"{self.frontend_url}/conch-logo-small.png"
-            logger.debug(f"Using logo URL: {logo_url}")
-            html_content = html_content.replace("{logo_url}", logo_url)
-
             mail_body = {}
 
-            # Set sender
             mail_from = {
                 "name": "Noblivion",
                 "email": self.sender_domain
             }
             self.mailer.set_mail_from(mail_from, mail_body)
 
-            # Set recipient
             recipients = [
                 {
                     "name": to_email,
@@ -56,13 +159,9 @@ class EmailService:
             ]
             self.mailer.set_mail_to(recipients, mail_body)
 
-            # Set subject
             self.mailer.set_subject(subject, mail_body)
-
-            # Set content
             self.mailer.set_html_content(html_content, mail_body)
 
-            # Create plain text version
             plain_text = html_content.replace('<br>', '\n').replace('</p>', '\n\n')
             self.mailer.set_plaintext_content(plain_text, mail_body)
 
@@ -70,177 +169,4 @@ class EmailService:
 
         except Exception as e:
             logger.error(f"Error creating mail body: {str(e)}")
-            raise
-
-    async def send_bug_report(self, to_email: str, subject: str, html_content: str):
-        """Send bug report email."""
-        try:
-            # Create mail body
-            mail_body = self._create_mail_body(
-                to_email=to_email,
-                subject=f"Bug Report: {subject}",
-                html_content=html_content
-            )
-
-            # Send email
-            return self.mailer.send(mail_body)
-
-        except Exception as e:
-            logger.error(f"Failed to send bug report email: {str(e)}")
-            raise
-
-    async def send_confirmation_email(self, to_email: str, confirmation_link: str):
-        """Send email confirmation link to user."""
-        try:
-            # Read template
-            template_path = Path("templates/email-confirmation.html")
-            async with aiofiles.open(template_path, "r") as f:
-                html_content = await f.read()
-
-            # Replace placeholders
-            html_content = html_content.replace("{confirmation_url}", confirmation_link)
-
-            # Create mail body
-            mail_body = self._create_mail_body(
-                to_email=to_email,
-                subject="Confirm your Noblivion account",
-                html_content=html_content
-            )
-
-            # Send email
-            return self.mailer.send(mail_body)
-
-        except Exception as e:
-            logger.error(f"Failed to send confirmation email: {str(e)}")
-            raise
-            
-    async def send_interview_invitation(self, to_email: str, profile_name: str, token: str, expires_at: str):
-        try:
-            logger.info("Sending interview invitation email")
-            # Read template
-            template_path = Path("templates/interview-invitation.html")
-            with open(template_path, "r") as f:
-                html_content = f.read()
-
-            # Format the date
-            formatted_date = expires_at.strftime("%B %d, %Y")  # e.g., "December 24, 2024"
-            
-            # Replace placeholders
-            html_content = html_content\
-                .replace("{profile_name}", profile_name)\
-                .replace("{interview_url}", f"{os.getenv('FRONTEND_URL')}/interview-token?token={token}")\
-                .replace("{expiry_date}", formatted_date)
-
-            # Create mail body
-            mail_body = self._create_mail_body(
-                to_email=to_email,
-                subject=f"You're invited to share memories about {profile_name}",
-                html_content=html_content
-            )
-
-            logger.info("Sending email to " + to_email)
-
-            # Send email
-            return self.mailer.send(mail_body)
-
-        except Exception as e:
-            logger.error(f"Failed to send invitation email: {str(e)}")
-            raise
-
-    async def send_expiry_reminder(self, to_email: str, profile_name: str, expires_at: str):
-        try:
-            template_path = Path("templates/expiry-reminder.html")
-            with open(template_path, "r") as f:
-                html_content = f.read()
-
-            # Format the date
-            formatted_date = expires_at.strftime("%B %d, %Y")
-            
-            html_content = html_content\
-                .replace("{profile_name}", profile_name)\
-                .replace("{expiry_date}", formatted_date)
-
-            mail_body = self._create_mail_body(
-                to_email=to_email,
-                subject=f"Reminder: Interview invitation for {profile_name} expires soon",
-                html_content=html_content
-            )
-
-            return self.mailer.send(mail_body)
-
-        except Exception as e:
-            logger.error(f"Failed to send expiry reminder: {str(e)}")
-            raise
-
-    async def send_password_reset_email(self, to_email: str, reset_token: str):
-        """Send password reset email with reset token link."""
-        try:
-            # Read template
-            template_path = Path("templates/password-reset.html")
-            with open(template_path, "r") as f:
-                html_content = f.read()
-    
-            # Replace placeholders
-            reset_url = f"{os.getenv('FRONTEND_URL')}/reset-password?token={reset_token}"
-            html_content = html_content.replace("{reset_url}", reset_url)
-    
-            # Create mail body
-            mail_body = self._create_mail_body(
-                to_email=to_email,
-                subject="Reset Your Noblivion Password",
-                html_content=html_content
-            )
-    
-            # Send email
-            return self.mailer.send(mail_body)
-    
-        except Exception as e:
-            logger.error(f"Failed to send password reset email: {str(e)}")
-            raise
-
-    async def send_waitlist_notification_manufacturer(self, user_email: str, registration_time: str):
-        """Send waitlist notification to manufacturer"""
-        try:
-            # Read template
-            template_path = Path("templates/waitlist-notification-manufacturer.html")
-            with open(template_path, "r") as f:
-                html_content = f.read()
-    
-            # Replace placeholders
-            html_content = html_content\
-                .replace("{user_email}", user_email)\
-                .replace("{registration_time}", registration_time)
-    
-            # Create mail body
-            mail_body = self._create_mail_body(
-                to_email="ralph.goellner@e-ntegration.de",
-                subject=f"New Waitlist Entry: {user_email}",
-                html_content=html_content
-            )
-    
-            return self.mailer.send(mail_body)
-    
-        except Exception as e:
-            logger.error(f"Failed to send manufacturer waitlist notification: {str(e)}")
-            raise
-    
-    async def send_waitlist_notification_user(self, to_email: str):
-        """Send waitlist confirmation to user"""
-        try:
-            # Read template
-            template_path = Path("templates/waitlist-notification-user.html")
-            with open(template_path, "r") as f:
-                html_content = f.read()
-    
-            # Create mail body
-            mail_body = self._create_mail_body(
-                to_email=to_email,
-                subject="Welcome to the Noblivion Waitlist",
-                html_content=html_content
-            )
-    
-            return self.mailer.send(mail_body)
-    
-        except Exception as e:
-            logger.error(f"Failed to send user waitlist notification: {str(e)}")
             raise

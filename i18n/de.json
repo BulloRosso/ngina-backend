@@ -1,0 +1,87 @@
+{
+    "common": {
+        "logo_alt": "Noblivion Logo",
+        "footer_text": "Dies ist eine automatische Nachricht von Noblivion - Ihre Erinnerungen sind wertvoll",
+        "note_label": "Bitte beachten Sie",
+        "important_label": "Wichtig",
+        "greeting": "Hallo!"
+    },
+    "account_verification": {
+        "subject": "Verifizieren Sie Ihr Noblivion-Konto",
+        "header_title": "Willkommen bei Noblivion!",
+        "verification_message": "Vielen Dank, dass Sie sich bei Noblivion registriert haben. Bitte verifizieren Sie Ihr Konto mit diesem Code:",
+        "expiry_notice": "Dieser Verifizierungscode läuft in 24 Stunden ab.",
+        "instructions": "Geben Sie diesen Code im Verifizierungsfenster ein, um Ihr Konto zu aktivieren und mit der Bewahrung Ihrer wertvollen Erinnerungen zu beginnen."
+    },
+    "email_confirmation": {
+        "subject": "Bestätigen Sie Ihr Noblivion-Konto",
+        "header_title": "Willkommen bei Noblivion!",
+        "confirmation_message": "Vielen Dank für die Erstellung Ihres Kontos. Bitte klicken Sie auf den Button unten, um Ihre E-Mail-Adresse zu bestätigen:",
+        "confirm_button": "E-Mail-Adresse bestätigen",
+        "ignore_message": "Wenn Sie kein Konto erstellt haben, können Sie diese E-Mail ignorieren."
+    },
+    "interview_invitation": {
+        "subject": "Sie sind eingeladen, Erinnerungen über {profile_name} zu teilen",
+        "header_title": "Interview-Einladung",
+        "invitation_message": "Sie wurden eingeladen, Erinnerungen über {profile_name} zu teilen. Ihre Erfahrungen und Geschichten sind wertvoll, und wir möchten sie gerne bewahren.",
+        "start_message": "Klicken Sie einfach auf den Button unten, um Ihre Interview-Sitzung zu starten:",
+        "start_button": "Interview starten",
+        "expiry_notice": "Dieser Einladungslink läuft am {expiry_date} ab.",
+        "what_to_expect": "Was Sie erwartet:",
+        "expectation_1": "Benutzerfreundliche Interview-Oberfläche",
+        "expectation_2": "Teilen Sie Erinnerungen in Ihrem eigenen Tempo",
+        "expectation_3": "Fügen Sie Fotos zu Ihren Geschichten hinzu",
+        "expectation_4": "Mehrere Sitzungen innerhalb des 2-Wochen-Zeitraums möglich",
+        "questions_note": "Zögern Sie nicht, die Person zu fragen, die Sie eingeladen hat, wenn Sie Fragen haben."
+    },
+    "expiry_reminder": {
+        "subject": "Erinnerung: Interview-Einladung für {profile_name} läuft bald ab",
+        "header_title": "Erinnerung: Interview-Einladung läuft bald ab",
+        "reminder_message": "Dies ist eine freundliche Erinnerung an Ihre Interview-Einladung für {profile_name}.",
+        "expiry_notice": "Ihr Interview-Link läuft am {expiry_date} ab.",
+        "action_message": "Wenn Sie noch keine Gelegenheit hatten, Ihre Erinnerungen zu teilen, möchten wir Sie ermutigen, dies vor Ablauf des Links zu tun. Ihre Geschichten und Erfahrungen sind wertvoll, und wir möchten sie gerne bewahren.",
+        "continue_button": "Interview fortsetzen",
+        "extension_note": "Benötigen Sie mehr Zeit? Kontaktieren Sie die Person, die Sie eingeladen hat, um eine Verlängerung anzufordern."
+    },
+    "password_reset": {
+        "subject": "Setzen Sie Ihr Noblivion-Passwort zurück",
+        "header_title": "Passwort zurücksetzen",
+        "reset_message": "Wir haben eine Anfrage erhalten, Ihr Passwort zurückzusetzen. Wenn Sie diese Anfrage nicht gestellt haben, können Sie diese E-Mail ignorieren.",
+        "reset_button": "Passwort zurücksetzen",
+        "expiry_notice": "Dieser Link zum Zurücksetzen des Passworts läuft in 24 Stunden ab.",
+        "manual_url_message": "Wenn Sie Probleme beim Klicken auf den Button haben, kopieren Sie diesen Link und fügen Sie ihn in Ihren Browser ein:"
+    },
+    "bug_report": {
+        "subject": "Fehlerbericht: {subject}",
+        "header_title": "Fehlerbericht",
+        "reported_by_label": "Gemeldet von",
+        "severity_label": "Schweregrad",
+        "subject_label": "Betreff",
+        "message_label": "Nachricht"
+    },
+    "waitlist_notification_user": {
+        "subject": "Willkommen auf der Noblivion-Warteliste",
+        "header_title": "Willkommen auf der Noblivion-Warteliste!",
+        "welcome_message": "Vielen Dank für Ihr Interesse an Noblivion. Wir haben Sie zu unserer Warteliste hinzugefügt und werden Sie kontaktieren, sobald wir Ihre Anfrage bearbeiten können.",
+        "status_message": "Wir halten Sie über Ihre Position auf dem Laufenden und benachrichtigen Sie, wenn Sie an der Reihe sind!",
+        "support_message": "Wenn Sie in der Zwischenzeit Fragen haben, können Sie sich gerne an unser Support-Team wenden.",
+        "ignore_message": "Wenn Sie sich nicht für die Warteliste angemeldet haben, können Sie diese E-Mail ignorieren."
+    },
+    "waitlist_notification_manufacturer": {
+        "subject": "Neuer Wartelisten-Eintrag: {user_email}",
+        "header_title": "Neue Wartelisten-Registrierung",
+        "notification_message": "Ein neuer Benutzer hat sich für die Noblivion-Warteliste angemeldet:",
+        "email_label": "E-Mail",
+        "registration_time_label": "Registrierungszeit",
+        "process_message": "Bitte bearbeiten Sie diese Anfrage gemäß unserer Standardverfahren."
+    },
+    "invitation_extended": {
+        "subject": "Ihr Interview-Zugang wurde verlängert",
+        "header_title": "Ihr Interview-Zugang wurde verlängert",
+        "extension_message": "Gute Nachrichten! Ihr Interview-Zugang für {profile_name} wurde verlängert.",
+        "new_expiry_label": "Neues Ablaufdatum",
+        "continue_message": "Sie können weiterhin Erinnerungen und Geschichten über denselben Link teilen:",
+        "continue_button": "Interview fortsetzen",
+        "value_message": "Ihre Beiträge sind wertvoll, und wir freuen uns darauf, weitere Ihrer Erinnerungen zu bewahren."
+    }
+}

@@ -34,26 +34,19 @@ class SupportBotResponse(BaseModel):
 @router.post("/bugreport")
 async def submit_bug_report(report: BugReportRequest):
     try:
-        # Read the email template
-        template_path = Path("templates/bug-report.html")
-        async with aiofiles.open(template_path, "r") as f:
-            html_content = await f.read()
-
-        # Replace placeholders in the template
-        html_content = html_content\
-            .replace("{severity}", report.severity)\
-            .replace("{subject}", report.subject)\
-            .replace("{message}", report.message)\
-            .replace("{userEmail}", report.userEmail)
-
         # Initialize email service
         email_service = EmailService()
 
         # Send the email
-        await email_service.send_bug_report(
-            "ralph.goellner@e-ntegration.de",
-            report.subject,
-            html_content
+        await email_service.send_email(
+            template_name='bug-report',
+            to_email="ralph.goellner@e-ntegration.de",
+            subject_key='subject',
+            locale='en',
+            severity=report.severity,
+            subject=report.subject,
+            message=report.message,
+            user_email=report.userEmail
         )
 
         return {"status": "success"}

@@ -176,13 +176,24 @@ async def join_waitlist(entry: WaitlistEntry):
         current_time = datetime.utcnow()
 
         # Send notification to manufacturer
-        await email_service.send_waitlist_notification_manufacturer(
-            entry.email,
-            current_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        await email_service.send_email(
+            template_name='waitlist-notification-manufacturer',
+            to_email='ralph.goellner@e-ntegration.de',
+            subject_key='subject',
+            locale='en',
+            user_email=entry.email,
+            subject='nOblivion: Someone joined the waitlist',
+            registration_time=current_time.strftime("%Y-%m-%d %H:%M:%S UTC")
         )
 
         # Send confirmation to user
-        await email_service.send_waitlist_notification_user(entry.email)
+        await email_service.send_email(
+            template_name='waitlist-notification-user',
+            to_email=entry.email,
+            subject_key='subject',
+            subject='nOblivion: You have been added to the waitlist',
+            locale='en'
+        )
 
         return {"status": "success"}
     except Exception as e:

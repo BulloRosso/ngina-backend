@@ -1,0 +1,19 @@
+{% include '_header.html' %}
+
+<div class="content">
+    <p>{{ t('common.greeting') }}</p>
+
+    <p>{{ t('verification_message') }}</p>
+
+    <div class="verification-code">
+        {{ verification_code }}
+    </div>
+
+    <div class="expiry-note">
+        <strong>{{ t('note_label') }}:</strong> {{ t('expiry_notice') }}
+    </div>
+
+    <p>{{ t('instructions') }}</p>
+</div>
+
+{% include '_footer.html' %}
