@@ -197,3 +197,50 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send password reset email: {str(e)}")
             raise
+
+    async def send_waitlist_notification_manufacturer(self, user_email: str, registration_time: str):
+        """Send waitlist notification to manufacturer"""
+        try:
+            # Read template
+            template_path = Path("templates/waitlist-notification-manufacturer.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+    
+            # Replace placeholders
+            html_content = html_content\
+                .replace("{user_email}", user_email)\
+                .replace("{registration_time}", registration_time)
+    
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email="ralph.goellner@e-ntegration.de",
+                subject=f"New Waitlist Entry: {user_email}",
+                html_content=html_content
+            )
+    
+            return self.mailer.send(mail_body)
+    
+        except Exception as e:
+            logger.error(f"Failed to send manufacturer waitlist notification: {str(e)}")
+            raise
+    
+    async def send_waitlist_notification_user(self, to_email: str):
+        """Send waitlist confirmation to user"""
+        try:
+            # Read template
+            template_path = Path("templates/waitlist-notification-user.html")
+            with open(template_path, "r") as f:
+                html_content = f.read()
+    
+            # Create mail body
+            mail_body = self._create_mail_body(
+                to_email=to_email,
+                subject="Welcome to the Noblivion Waitlist",
+                html_content=html_content
+            )
+    
+            return self.mailer.send(mail_body)
+    
+        except Exception as e:
+            logger.error(f"Failed to send user waitlist notification: {str(e)}")
+            raise

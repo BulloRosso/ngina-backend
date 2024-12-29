@@ -12,10 +12,16 @@ from models.invitation import (
 from services.invitation import InvitationService
 from dependencies.auth import get_current_user
 import logging
+from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from services.email import EmailService
 
 router = APIRouter(prefix="/invitations", tags=["invitations"])
 logger = logging.getLogger(__name__)
 
+class WaitlistEntry(BaseModel):
+    email: EmailStr
+    
 @router.post("")
 async def create_invitation(
     invitation: InvitationCreate,
@@ -157,6 +163,30 @@ async def get_invitation_sessions(
         raise
     except Exception as e:
         logger.error(f"Error getting invitation sessions: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@router.post("/waitinglist")
+async def join_waitlist(entry: WaitlistEntry):
+    """Add user to waitlist and send notifications"""
+    try:
+        email_service = EmailService()
+        current_time = datetime.utcnow()
+
+        # Send notification to manufacturer
+        await email_service.send_waitlist_notification_manufacturer(
+            entry.email,
+            current_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        )
+
+        # Send confirmation to user
+        await email_service.send_waitlist_notification_user(entry.email)
+
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error processing waitlist entry: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=str(e)
