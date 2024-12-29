@@ -86,10 +86,19 @@
     },
     "print_ready": {
         "pdf_ready_subject": "Ihr PDF-Dokument ist fertig",
+        "header_title": "Ihr PDF-Dokument ist fertig",
         "greeting": "Hallo,",
         "pdf_ready": "Ihr PDF-Dokument wurde erstellt und steht zum Download bereit.",
         "download_pdf": "PDF herunterladen",
         "download_expire": "Bitte beachten Sie, dass dieser Download-Link in 24 Stunden abläuft.",
         "ignore_message": "Falls Sie dieses PDF nicht angefordert haben, ignorieren Sie bitte diese E-Mail."
+    },
+    "pdf_generation": {
+        "category_childhood": "Kindheit",
+        "category_career": "Beruf",
+        "category_travel": "Reise",
+        "category_relationships": "Familie",
+        "category_hobbies": "Hobbys",
+        "category_pets": "Haustiere"
     }
 }

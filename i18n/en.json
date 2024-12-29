@@ -86,10 +86,19 @@
     },
     "print_ready": {
         "pdf_ready_subject": "Your PDF Document is Ready",
+        "header_title": "Your PDF Document is Ready",
         "greeting": "Hello,",
         "pdf_ready": "Your PDF document has been generated and is ready for download.",
         "download_pdf": "Download PDF",
         "download_expire": "Please note that this download link will expire in 24 hours.",
         "ignore_message": "If you did not request this PDF, please ignore this email."
+    },
+    "pdf_generation": {
+        "category_childhood": "Childhood",
+        "category_career": "Career",
+        "category_travel": "Travel",
+        "category_relationships": "Relationships",
+        "category_hobbies": "Hobbyies",
+        "category_pets": "Pets"
     }
 }

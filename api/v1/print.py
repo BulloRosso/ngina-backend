@@ -12,6 +12,7 @@ from pathlib import Path
 import asyncio
 from datetime import datetime
 from supabase import create_client, Client, AuthApiError
+import json
 
 router = APIRouter(prefix="/print", tags=["print"])
 
@@ -21,23 +22,48 @@ class PrintRequest(BaseModel):
 
 # api/v1/print.py
 
-async def generate_PDF(template: str, sort_order: str, profile_id: str):
+async def generate_PDF(template: str, sort_order: str, profile_id: str, language: str = 'en'):
     try:
         # Initialize services
         memory_service = MemoryService()
         doc_api = docraptor.DocApi()
         doc_api.api_client.configuration.username = os.getenv('DOCRAPTOR_API_KEY')
 
-        # Get memories
+        # Load translations
+        try:
+            with open(f'i18n/{language}.json', 'r', encoding='utf-8') as f:
+                translations = json.load(f)['pdf_generation']
+        except Exception as e:
+            logging.error(f"Error loading translations: {str(e)}")
+            translations = {}
+
+        # Get memories and profile data
         memories = await memory_service.get_memories_for_profile(profile_id)
 
-        # Sort memories - note we're accessing dictionary keys now
+        # Get profile details
+        instance = MemoryService.get_instance()
+        profile_result = instance.supabase.table("profiles")\
+            .select("first_name,last_name")\
+            .eq("id", profile_id)\
+            .execute()
+
+        if not profile_result.data:
+            raise Exception("Profile not found")
+
+        profile = profile_result.data[0]
+
+        # Convert time_period strings to datetime objects
+        for memory in memories:
+            if isinstance(memory['time_period'], str):
+                memory['time_period'] = datetime.fromisoformat(memory['time_period'].replace('Z', '+00:00'))
+
+        # Sort memories
         if sort_order == 'category':
             memories.sort(key=lambda x: x['category'])
         else:
             memories.sort(key=lambda x: x['time_period'])
 
-        # Generate HTML content - using dictionary access
+        # Generate HTML content
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -46,6 +72,15 @@ async def generate_PDF(template: str, sort_order: str, profile_id: str):
                 @page {{
                     size: legal portrait;
                     margin: 1in;
+                    @bottom {{
+                        content: "Page " counter(page) " of " counter(pages);
+                        font-family: Arial, sans-serif;
+                    }}
+                }}
+                @page no-numbers {{
+                    @bottom {{
+                        content: normal;
+                    }}
                 }}
                 body {{
                     font-family: Arial, sans-serif;
@@ -53,37 +88,60 @@ async def generate_PDF(template: str, sort_order: str, profile_id: str):
                 .title-page {{
                     text-align: center;
                     margin-top: 4in;
+                    page: no-numbers;
+                }}
+                .toc {{
+                    page-break-before: always;
+                    page: no-numbers;
                 }}
                 .memory-page {{
                     page-break-before: always;
                 }}
-                .toc {{
-                    page-break-before: always;
+                .primary-image {{
+                    width: 50%;
+                    height: auto;
+                    display: block;
+                    margin: 1em 0;
+                }}
+                .secondary-images {{
+                    width: 30%;
+                    height: auto;
+                    display: inline-block;
+                    margin: 0.5em;
                 }}
             </style>
         </head>
         <body>
             <div class="title-page">
                 <h1>Memory Collection</h1>
+                <h2>of {profile['first_name']} {profile['last_name']}</h2>
                 <p>Generated on {datetime.now().strftime('%B %d, %Y')}</p>
             </div>
 
             <div class="toc">
                 <h2>Table of Contents</h2>
                 <ul>
-                    {''.join(f'<li>{memory["description"]}</li>' for memory in memories)}
+                    {''.join([
+                        f'<li>{memory["time_period"].year if memory["time_period"].month == 1 and memory["time_period"].day == 1 else memory["time_period"].strftime("%B %d, %Y")}: '
+                        f'{translations.get("category_" + memory["category"].replace("Category.", "").lower(), memory["category"])}</li>'
+                        for memory in memories
+                    ])}
                 </ul>
             </div>
 
-            {''.join(f'''
+            {''.join([
+                f'''
                 <div class="memory-page">
                     <h2>{memory["description"]}</h2>
-                    <p><strong>Category:</strong> {memory["category"]}</p>
-                    <p><strong>Time:</strong> {memory["time_period"]}</p>
+                    <p><strong>{translations.get("category_" + memory["category"].replace("Category.", "").lower(), memory["category"])}</strong></p>
+                    <p><strong>Time:</strong> {memory["time_period"].year if memory["time_period"].month == 1 and memory["time_period"].day == 1 else memory["time_period"].strftime("%B %d, %Y")}</p>
+                    {'<img src="' + memory["image_urls"][0] + '" class="primary-image">' if memory.get("image_urls") else ''}
                     <p>{memory["description"]}</p>
-                    {''.join(f'<img src="{url}" style="max-width: 6in;">' for url in memory.get("image_urls", []))}
+                    {''.join(['<img src="' + url + '" class="secondary-images">' for url in memory.get("image_urls", [])[1:]])}
                 </div>
-            ''' for memory in memories)}
+                '''
+                for memory in memories
+            ])}
         </body>
         </html>
         """
