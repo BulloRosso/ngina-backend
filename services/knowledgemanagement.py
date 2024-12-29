@@ -40,6 +40,7 @@ class MemoryClassification(BaseModel):
     """Model for classified memory information"""
     is_memory: bool
     rewritten_text: str
+    caption: str  
     category: Optional[str]
     location: Optional[str]
     timestamp: str  # ISO format date string
@@ -154,8 +155,12 @@ class KnowledgeManagement:
             prompt = f"""Analyze the following text and classify it as a memory or not. 
 
             {profile_context}
-             
-            If it is a memory, rewrite it {perspective_text}, {style_text}. Also extract the category, location, and timestamp.
+            
+            If it is a memory:
+            1. Rewrite it {perspective_text}, {style_text}
+            2. Create a brief caption (3-8 words) that captures the essence of the memory
+            3. Extract the category, location, and timestamp
+
             Compared to the user's input, your rewritten text should be {verbosity_text}.
             If the exact date is unknown, please estimate the month and year based on context clues
             or use the current date if no time information is available.
@@ -170,6 +175,7 @@ class KnowledgeManagement:
             {{
                 "is_memory": true/false,
                 "rewritten_text": "rewritten memory in {language}",
+                "caption": "3-8 word caption in {language}",
                 "category": "one of: childhood, career, travel, relationships, hobbies, pets",
                 "location": "where it happened or 'Unknown' if not mentioned",
                 "timestamp": "YYYY-MM-DD (if unknown, use current date)"

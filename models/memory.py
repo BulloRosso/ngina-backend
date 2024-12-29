@@ -44,6 +44,8 @@ class MemoryCreate(BaseModel):
     category: Category
     original_user_input: Optional[str] = None
     description: str
+    caption: Optional[str] = None  
+    original_description: Optional[str] = None
     time_period: datetime
     location: Optional[Location]
     people: List[Person] = []
@@ -54,6 +56,8 @@ class MemoryCreate(BaseModel):
 class MemoryUpdate(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = None
+    caption: Optional[str] = None  
+    original_description: Optional[str] = None
     time_period: Optional[datetime] = None
     location: Optional[dict] = None
     people: Optional[List[dict]] = None

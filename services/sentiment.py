@@ -1,13 +1,15 @@
 # services/sentiment.py
 from uuid import UUID, uuid4
 from datetime import datetime
-from models.memory import InterviewQuestion
+from models.memory import InterviewResponse, InterviewQuestion, MemoryCreate, Location, Category 
 import openai
 import os
 from typing import Dict, Any
 from supabase import create_client, Client
 import logging
 from services.knowledgemanagement import KnowledgeManagement, MemoryClassification
+from services.memory import MemoryService 
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -114,15 +116,6 @@ class EmpatheticInterviewer:
         Process a response from the interviewee and generate the next question.
         """
         try:
-            # First, get profile settings
-            profile_result = self.supabase.table("users").select("profile").eq(
-                "id", str(user_id)
-            ).execute()
-
-            if not profile_result.data:
-                raise Exception(f"User not found {user_id}")
-
-            profile_settings = profile_result.data[0].get("profile", {})
 
             # Second, fetch the profile
             profile_basics = self.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
@@ -163,13 +156,39 @@ class EmpatheticInterviewer:
             # If it's a memory, store it
             if classification.is_memory:
                 logger.info(f"rewrittenText='{classification.rewritten_text}'")
+                logger.info(f"caption='{classification.caption}'")  
                 logger.info(f"narrator_perspective='{narrator_perspective}'")
-                memory_id = await self.knowledge_manager.store_memory(
-                    profile_id,
-                    session_id,
-                    classification
+                
+                # Create memory with original description and caption
+                memory_data = MemoryCreate(
+                    category=classification.category,
+                    description=classification.rewritten_text,
+                    original_description=response_text,  # NEW
+                    caption=classification.caption,  # NEW
+                    time_period=datetime.fromisoformat(classification.timestamp),
+                    location=Location(
+                        name=classification.location if classification.location != "unbekannt" else "Unknown",
+                        city=None,
+                        country=None,
+                        description=None
+                    ) if classification.location else None
                 )
-               
+                
+                memory_id = await MemoryService.create_memory(
+                    memory_data,
+                    profile_id,
+                    session_id
+                )
+
+                # Asynchronously update the knowledge graph
+                asyncio.create_task(self.knowledge_manager.append_to_rag(
+                    classification.rewritten_text, 
+                    str(profile_id), 
+                    str(memory_id), 
+                    classification.category, 
+                    classification.location
+                ))
+
                 # Generate follow-up question based on the processed response
                 next_question = await self.generate_next_question(
                     profile_id, 

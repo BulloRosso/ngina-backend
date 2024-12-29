@@ -170,6 +170,8 @@ class ProfileService:
                             For each memory in the "memories" array, provide:
                             {{
                                 "description": "Full description of the memory in {language}",
+                                "original_description": "Original description of the memory in {language}",
+                                "caption": "3-8 word caption that captures the essence in {language}",
                                 "category": "One of: childhood/career/relationships/travel/hobbies/pets",
                                 "date": "YYYY-MM-DD (approximate if not specified)",
                                 "location": {{
@@ -211,6 +213,8 @@ class ProfileService:
                         memory = MemoryCreate(
                             category=category,
                             description=memory_data['description'],
+                            caption=memory_data.get('caption'),  
+                            original_description=memory_data['original_description'],
                             time_period=memory_data.get('date'),
                             location=Location(**memory_data['location']) if memory_data.get('location') else None
                         )

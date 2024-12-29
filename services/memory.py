@@ -84,7 +84,8 @@ class MemoryService:
             logger.debug(f"Update data: {memory_data}")
 
             instance = cls.get_instance()
-
+           
+            
             # Handle time_period field name conversion
             if "time_period" in memory_data:
                 time_period = memory_data["time_period"]
@@ -93,11 +94,22 @@ class MemoryService:
                     time_period = time_period.isoformat()
                 memory_data["time_period"] = time_period
 
+            update_data = {}
+            
+            # Copy existing fields
+            for field in ['category', 'description', 'time_period', 'location', 
+                         'people', 'emotions', 'image_urls', 'audio_url']:
+                if field in memory_data:
+                    update_data[field] = memory_data[field]
+                    
+            # Add new fields if they exist in the update data
+            if 'caption' in memory_data:
+                update_data['caption'] = memory_data['caption']
+            if 'original_description' in memory_data:
+                update_data['original_description'] = memory_data['original_description']
+                
             # Add updated_at timestamp
-            update_data = {
-                **memory_data,
-                "updated_at": datetime.utcnow().isoformat()
-            }
+            update_data['updated_at'] = datetime.utcnow().isoformat()
 
             # Update the memory in Supabase
             result = instance.supabase.table(cls.table_name)\
@@ -165,6 +177,8 @@ class MemoryService:
                     "session_id": str(session_id),
                     "category": str(memory.category),
                     "description": str(memory.description),
+                    "caption": memory.caption,
+                    "original_description": memory.original_description,
                     "time_period": str(memory.time_period),
                     "emotions": [],  # Start with empty arrays if these are causing issues
                     "people": [],
