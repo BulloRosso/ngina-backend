@@ -273,6 +273,30 @@ class MemoryService:
             logger.error(f"Error deleting media from memory: {str(e)}")
             logger.error(traceback.format_exc())
             raise Exception(f"Failed to delete media: {str(e)}")
+
+    @classmethod
+    async def get_memories_for_profile(cls, profile_id: str):
+        """Get all memories for a profile, ordered by time_period"""
+        try:
+            logger.debug(f"Fetching memories for profile: {profile_id}")
+            instance = cls.get_instance()
+
+            result = instance.supabase.table(cls.table_name)\
+                .select("*")\
+                .eq("profile_id", str(profile_id))\
+                .order("time_period")\
+                .execute()
+
+            if not result.data:
+                logger.info(f"No memories found for profile {profile_id}")
+                return []
+
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error fetching memories for profile {profile_id}: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"Failed to fetch memories: {str(e)}")
     
     @classmethod
     async def add_media_to_memory(cls, memory_id: UUID, files: List[bytes], content_types: List[str]) -> dict:

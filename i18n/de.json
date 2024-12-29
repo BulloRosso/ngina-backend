@@ -83,5 +83,13 @@
         "continue_message": "Sie können weiterhin Erinnerungen und Geschichten über denselben Link teilen:",
         "continue_button": "Interview fortsetzen",
         "value_message": "Ihre Beiträge sind wertvoll, und wir freuen uns darauf, weitere Ihrer Erinnerungen zu bewahren."
+    },
+    "print_ready": {
+        "pdf_ready_subject": "Ihr PDF-Dokument ist fertig",
+        "greeting": "Hallo,",
+        "pdf_ready": "Ihr PDF-Dokument wurde erstellt und steht zum Download bereit.",
+        "download_pdf": "PDF herunterladen",
+        "download_expire": "Bitte beachten Sie, dass dieser Download-Link in 24 Stunden abläuft.",
+        "ignore_message": "Falls Sie dieses PDF nicht angefordert haben, ignorieren Sie bitte diese E-Mail."
     }
 }

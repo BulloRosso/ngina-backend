@@ -1,0 +1,19 @@
+{% include '_header.html' %}
+
+<div class="content">
+    <p>{{ t('greeting') }}</p>
+
+    <p>{{ t('pdf_ready') }}</p>
+
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ download_url }}" style="background-color: #1eb3b7; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
+            {{ t('download_pdf') }}
+        </a>
+    </div>
+
+    <p>{{ t('download_expire') }}</p>
+
+    <p>{{ t('ignore_message') }}</p>
+</div>
+
+{% include '_footer.html' %}

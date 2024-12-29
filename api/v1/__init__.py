@@ -8,6 +8,7 @@ from .auth  import router as auth_router
 from .chat  import router as chat_router
 from .invitations import router as invitations_router
 from .supportbot import router as supportbot_router
+from .print import router as print_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(interviews_router)
@@ -18,3 +19,4 @@ router.include_router(auth_router)
 router.include_router(chat_router)
 router.include_router(invitations_router)
 router.include_router(supportbot_router)
+router.include_router(print_router)
