@@ -13,6 +13,8 @@ import asyncio
 from datetime import datetime
 from supabase import create_client, Client, AuthApiError
 import json
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
 
 router = APIRouter(prefix="/print", tags=["print"])
 
@@ -20,7 +22,63 @@ class PrintRequest(BaseModel):
     template: Literal['professional', 'warm', 'romantic']
     sortOrder: Literal['category', 'timestamp']
 
-# api/v1/print.py
+def get_image_url(url: str) -> str:
+    if url and not url.startswith('http'):
+        frontend_url = os.getenv('FRONTEND_URL', '').rstrip('/')
+        return f"{frontend_url}/{url.lstrip('/')}"
+    return url
+
+class PDFGenerator:
+    def __init__(self):
+        template_dir = Path(__file__).parent.parent.parent / "pdf-templates"
+        self.env = Environment(
+            loader=FileSystemLoader(template_dir),
+            autoescape=True
+        )
+        self.frontend_url = os.getenv('FRONTEND_URL', '').rstrip('/')
+
+    def _format_memory_data(self, memory: dict) -> dict:
+        date_str = (memory["time_period"].year 
+                   if memory["time_period"].month == 1 and memory["time_period"].day == 1 
+                   else memory["time_period"].strftime("%B %d, %Y"))
+
+        category_icon = memory["category"].split('.')[-1].lower() if '.' in memory["category"] else memory["category"].lower()
+
+        return {
+            **memory,
+            'date_str': date_str,
+            'image_urls': [get_image_url(url) for url in memory.get('image_urls', [])],
+            'caption': memory.get('caption', memory['description']),
+            'category_icon': category_icon
+        }
+
+    def generate_html(self, profile: dict, memories: list, translations: dict) -> str:
+        # Process memories
+        memories.sort(key=lambda x: x['time_period'], reverse=False)
+        formatted_memories = [self._format_memory_data(memory) for memory in memories]
+
+        # Prepare template data
+        template_data = {
+            'frontend_url': self.frontend_url,
+            'profile': profile,
+            'memories': formatted_memories,
+            'generation_date': datetime.now().strftime('%B %d, %Y'),
+            'translations': translations
+        }
+
+        # Generate content sections
+        title_content = self.env.get_template('title.html').render(**template_data)
+        toc_content = self.env.get_template('toc.html').render(**template_data)
+        memories_content = ''.join(
+            self.env.get_template('memory.html').render(memory=memory, **template_data)
+            for memory in formatted_memories
+        )
+
+        # Combine all sections
+        content = title_content + toc_content + memories_content
+
+        # Render final HTML
+        return self.env.get_template('base.html').render(content=content, **template_data)
 
 async def generate_PDF(template: str, sort_order: str, profile_id: str, language: str = 'en'):
     try:
@@ -39,8 +97,6 @@ async def generate_PDF(template: str, sort_order: str, profile_id: str, language
 
         # Get memories and profile data
         memories = await memory_service.get_memories_for_profile(profile_id)
-
-        # Get profile details
         instance = MemoryService.get_instance()
         profile_result = instance.supabase.table("profiles")\
             .select("first_name,last_name")\
@@ -63,108 +119,27 @@ async def generate_PDF(template: str, sort_order: str, profile_id: str, language
         else:
             memories.sort(key=lambda x: x['time_period'])
 
-        # Generate HTML content
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                @page {{
-                    size: legal portrait;
-                    margin: 1in;
-                    @bottom {{
-                        content: "Page " counter(page) " of " counter(pages);
-                        font-family: Arial, sans-serif;
-                    }}
-                }}
-                @page no-numbers {{
-                    @bottom {{
-                        content: normal;
-                    }}
-                }}
-                body {{
-                    font-family: Arial, sans-serif;
-                }}
-                .title-page {{
-                    text-align: center;
-                    margin-top: 4in;
-                    page: no-numbers;
-                }}
-                .toc {{
-                    page-break-before: always;
-                    page: no-numbers;
-                }}
-                .memory-page {{
-                    page-break-before: always;
-                }}
-                .primary-image {{
-                    width: 50%;
-                    height: auto;
-                    display: block;
-                    margin: 1em 0;
-                }}
-                .secondary-images {{
-                    width: 30%;
-                    height: auto;
-                    display: inline-block;
-                    margin: 0.5em;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="title-page">
-                <h1>Memory Collection</h1>
-                <h2>of {profile['first_name']} {profile['last_name']}</h2>
-                <p>Generated on {datetime.now().strftime('%B %d, %Y')}</p>
-            </div>
-
-            <div class="toc">
-                <h2>Table of Contents</h2>
-                <ul>
-                    {''.join([
-                        f'<li>{memory["time_period"].year if memory["time_period"].month == 1 and memory["time_period"].day == 1 else memory["time_period"].strftime("%B %d, %Y")}: '
-                        f'{translations.get("category_" + memory["category"].replace("Category.", "").lower(), memory["category"])}</li>'
-                        for memory in memories
-                    ])}
-                </ul>
-            </div>
-
-            {''.join([
-                f'''
-                <div class="memory-page">
-                    <h2>{memory["description"]}</h2>
-                    <p><strong>{translations.get("category_" + memory["category"].replace("Category.", "").lower(), memory["category"])}</strong></p>
-                    <p><strong>Time:</strong> {memory["time_period"].year if memory["time_period"].month == 1 and memory["time_period"].day == 1 else memory["time_period"].strftime("%B %d, %Y")}</p>
-                    {'<img src="' + memory["image_urls"][0] + '" class="primary-image">' if memory.get("image_urls") else ''}
-                    <p>{memory["description"]}</p>
-                    {''.join(['<img src="' + url + '" class="secondary-images">' for url in memory.get("image_urls", [])[1:]])}
-                </div>
-                '''
-                for memory in memories
-            ])}
-        </body>
-        </html>
-        """
+        # Generate HTML using templates
+        pdf_generator = PDFGenerator()
+        html_content = pdf_generator.generate_html(profile, memories, translations)
 
         # Generate PDF using DocRaptor
         try:
             response = doc_api.create_doc({
-                'test': True,  # Set to True for testing
+                'test': True,
                 'document_type': 'pdf',
                 'document_content': html_content,
                 'name': f'memories_{profile_id}.pdf',
                 'prince_options': {
                     'media': 'print',
                     'javascript': False,
-                    'pdf_profile': 'PDF/A-1b'  # For archival quality
+                    'pdf_profile': 'PDF/A-1b'
                 }
             })
 
-            # Store PDF in Supabase
+            # Store and return PDF
             filename = f"{profile_id}/{uuid.uuid4()}.pdf"
             instance = MemoryService.get_instance()
-
-            # Convert response to bytes
             pdf_bytes = bytes(response)
 
             result = instance.supabase.storage.from_('pdfs').upload(
@@ -173,10 +148,9 @@ async def generate_PDF(template: str, sort_order: str, profile_id: str, language
                 file_options={"content-type": "application/pdf"}
             )
 
-            # Create signed URL
             signed_url = instance.supabase.storage.from_('pdfs').create_signed_url(
                 path=filename,
-                expires_in=86400  # 24 hours
+                expires_in=86400
             )
 
             return signed_url['signedURL']

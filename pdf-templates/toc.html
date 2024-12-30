@@ -1,0 +1,10 @@
+<div class="toc">
+    <h2>Table of Contents</h2>
+    <ul>
+        {% for memory in memories %}
+        <li>
+            {{ memory.date_str }}: {{ memory.category }} - {{ memory.caption or memory.description }}
+        </li>
+        {% endfor %}
+    </ul>
+</div>

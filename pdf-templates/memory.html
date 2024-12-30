@@ -1,0 +1,13 @@
+<div class="memory-page">
+    <h2>{{ memory.caption or memory.description }}</h2>
+    <p style="text-align: right;">
+        <img src="{{ frontend_url }}/img/categories/{{ memory.category_icon }}.svg" style="width:60px; filter: brightness(0) opacity(0.3);"  /></p>
+    <p>{{ memory.date_str }}</p>
+    {% if memory.image_urls %}
+        <img src="{{ memory.image_urls[0] }}" class="primary-image">
+    {% endif %}
+    <p>{{ memory.description }}</p>
+    {% for url in memory.image_urls[1:] %}
+        <img src="{{ url }}" class="secondary-images">
+    {% endfor %}
+</div>
