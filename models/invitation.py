@@ -12,6 +12,7 @@ class InvitationStatus(str, Enum):
 class InvitationCreate(BaseModel):
     profile_id: UUID4
     email: EmailStr
+    language: str = 'en'
 
 class InvitationUpdate(BaseModel):
     expires_at: Optional[datetime]

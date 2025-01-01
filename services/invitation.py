@@ -64,7 +64,7 @@ class InvitationService:
             invitation = Invitation(**result.data[0])
 
             # Send invitation email
-            await self._send_invitation_email(invitation)
+            await self._send_invitation_email(invitation, invitation_data.language)
 
             # Schedule expiry reminder
             # self._schedule_expiry_reminder(invitation, background_tasks)
@@ -337,17 +337,15 @@ class InvitationService:
         except Exception as e:
             logger.error(f"Error updating usage: {str(e)}")
 
-    async def _send_invitation_email(self, invitation: Invitation):
-        """Send initial invitation email"""
+    async def _send_invitation_email(self, invitation: Invitation, language: str):
         profile_data = await self._get_profile(invitation.profile_id)
         if profile_data:
-            logger.info(profile_data)
             profile = Profile(**profile_data)
             await self.email_service.send_email(
                 template_name='interview-invitation',
                 to_email=invitation.email,
                 subject_key='subject',
-                locale='en',
+                locale=language,
                 subject='Interview Invitation',
                 profile_name=f"{profile.first_name} {profile.last_name}",
                 interview_url=f"{os.getenv('FRONTEND_URL')}/interview-token?token={invitation.secret_token}",

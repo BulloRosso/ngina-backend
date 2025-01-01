@@ -26,22 +26,18 @@ class WaitlistEntry(BaseModel):
 async def create_invitation(
     invitation: InvitationCreate,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user)
+    current_user: UUID = Depends(get_current_user)  # Changed from dict to UUID
 ) -> Invitation:
-    """Create a new interview invitation"""
     try:
         service = InvitationService()
         return await service.create_invitation(
             invitation_data=invitation,
-            created_by=current_user["sub"],
+            created_by=current_user,  # Pass UUID directly
             background_tasks=background_tasks
         )
     except Exception as e:
         logger.error(f"Error creating invitation: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/dashboard")
 async def get_invitations(

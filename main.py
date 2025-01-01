@@ -11,7 +11,8 @@ app = FastAPI(title="Noblivion API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://8ede5a9c-1536-4919-b14f-82f6fd92faca-00-bvc5u3f2ay1d.janeway.replit.dev"],
+    allow_origins=["http://localhost:5173","https://8ede5a9c-1536-4919-b14f-82f6fd92faca-00-bvc5u3f2ay1d.janeway.replit.dev",
+                "https://noblivion.replit.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
