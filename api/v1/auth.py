@@ -35,7 +35,8 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     enable_mfa: bool = True
-
+    language: str = 'en'
+    
 class VerificationRequest(BaseModel):
     code: str
     user_id: str
@@ -195,7 +196,7 @@ async def resend_confirmation(request: EmailRequest):
             template_name='email-confirmation',
             to_email=request.email,
             subject_key='subject',
-            locale='en',
+            locale=request.language,
             subject='Confirm your email',
             confirmation_url=confirmation_link
         )
@@ -255,7 +256,8 @@ async def signup(request: SignupRequest):
                 "data": {
                     "first_name": request.first_name,
                     "last_name": request.last_name,
-                    "mfa_enabled": request.enable_mfa
+                    "mfa_enabled": request.enable_mfa,
+                    "language": request.language
                 }
             }
         })
@@ -271,7 +273,7 @@ async def signup(request: SignupRequest):
             template_name='email-confirmation',
             to_email=request.email,
             subject_key='subject',
-            locale='en',
+            locale=request.language,
             subject='nOblvion: Please confirm your email',
             confirmation_url=confirmation_link
         )
