@@ -442,7 +442,11 @@ class KnowledgeManagement:
         
         return ""
 
-    async def query_with_rag(self, query_text: str, profile_id) -> str:
+    async def query_with_rag(self, 
+                             query_text: str, 
+                             profile_id,
+                             system_prompt: str = None
+                            ) -> str:
         """
         Query the knowledge graph using RAG and return the answer.
         """
@@ -470,14 +474,14 @@ class KnowledgeManagement:
                 model_name="gpt-4o-mini",
                 model_params={
                     "max_tokens": 2000,  # Limit output tokens
-                    "temperature": 0.2
+                    "temperature": 0.2,
                 }
             )
             rag = GraphRAG(llm=llm, retriever=hybrid_retriever)
     
             # Get response
             logger.debug(f"Executing RAG query: {query_text}")
-            response = rag.search(query_text=query_text, 
+            response = rag.search(query_text= system_prompt + query_text,
                                   retriever_config= { 'top_k': 5 })
             logger.debug(f"Generated response: {response.answer}")
     
