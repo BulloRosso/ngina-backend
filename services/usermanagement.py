@@ -7,6 +7,7 @@ import logging
 import bcrypt
 from datetime import datetime
 from uuid import UUID
+from jose import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,17 @@ class UserManagementService:
     async def request_password_reset(self, email: str) -> bool:
         """Request password reset through Supabase Auth API"""
         try:
-            await self.supabase.auth.reset_password_email(email)
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            self.supabase.auth.reset_password_for_email(
+                email,
+                {
+                    "redirect_to": f"{frontend_url}/reset-password",
+                    "email_redirect_to": f"{frontend_url}/reset-password",  # Add this backup redirect
+                    "options": {
+                        "email_token_expiration_seconds": 3600  # Set to 1 hour (default is 24 hours)
+                    }
+                }
+            )
             return True
         except Exception as e:
             logger.error(f"Password reset request error: {str(e)}")
@@ -91,9 +102,25 @@ class UserManagementService:
     async def reset_password(self, token: str, new_password: str) -> bool:
         """Reset password using token through Supabase Auth API"""
         try:
-            await self.supabase.auth.update_user({
-                "password": new_password
-            }, jwt=token)
+            
+            # Parse token as URL fragment
+            payload = jwt.decode(
+                token,
+                os.getenv("SUPABASE_JWT_SECRET"),
+                algorithms=["HS256"],
+                audience="authenticated"
+            )
+
+            user_id = payload.get('sub')
+            logger.info(f"Changing pwd for uid {user_id}")
+            if not user_id:
+                raise ValueError("No user ID in reset token")
+
+            # Update password using admin API
+            self.supabase.auth.admin.update_user_by_id(
+                user_id,
+                {"password": new_password}
+            )
             return True
         except Exception as e:
             logger.error(f"Password reset error: {str(e)}")
