@@ -6,10 +6,11 @@ from fastapi.security import OAuth2PasswordBearer
 from typing import Dict, Optional, Any
 from pydantic import BaseModel
 from uuid import UUID
+from jose import jwt
 import logging
 import os
 from services.usermanagement import UserManagementService, UserData
-from dependencies.auth import get_current_user
+from dependencies.auth import get_current_user_dependency
 from supabase import create_client, Client, AuthApiError
 from datetime import datetime
 from httpx import Response
@@ -285,7 +286,7 @@ async def signup(request: SignupRequest):
 
 @router.post("/enable-mfa")
 async def enable_mfa(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user_dependency)
 ):
     """Enable MFA for a user who previously had it disabled"""
     try:
@@ -512,7 +513,7 @@ async def reset_password(request: PasswordResetConfirm):
 @router.get("/profile/{user_id}")
 async def get_user_profile(
     user_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user_dependency)
 ):
     """Get user profile settings"""
     try:
@@ -539,7 +540,7 @@ async def get_user_profile(
 @router.post("/profile")
 async def update_user_profile(
     profile_update: Dict[str, Any],
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user_dependency)
 ):
     """Update user profile settings"""
     try:
@@ -553,10 +554,10 @@ async def update_user_profile(
         logger.error(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def get_user_profile_from_token(token: str = Depends(oauth2_scheme)):
     try:
         service = UserManagementService()
-        # Supabase will verify the token and return user info
+        # Pass only the token for service to handle
         user = await service.get_user_by_id(token)
 
         if not user:

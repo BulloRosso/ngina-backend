@@ -1,13 +1,19 @@
 # api/v1/supportbot.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from services.email import EmailService
 from openai import OpenAI
 from pathlib import Path
 import logging
 import os
 import aiofiles
+from langchain_postgres import PostgresChatMessageHistory
+from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
+import psycopg
+from datetime import datetime
+from uuid import UUID
+from dependencies.auth import get_current_user  
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,21 +24,78 @@ client = OpenAI()
 
 router = APIRouter(prefix="/supportbot", tags=["bots"])
 
+# PostgreSQL connection settings
+POSTGRES_CONNECTION = os.getenv("REPLIT_POSTGRES_CONNECTION")
+
 class BugReportRequest(BaseModel):
     severity: Literal['Feature Request', 'Bug', 'Severe Bug']
     subject: str
     message: str
     userEmail: str
-    
+
 class SupportBotRequest(BaseModel):
     message: str
-    language: str = "en"  # default to English if not specified
+    language: str = "en"  # session_id removed as it's now from auth
 
 class SupportBotResponse(BaseModel):
     answer: str
 
+def initialize_chat_history():
+    """Initialize PostgreSQL tables for chat history if they don't exist."""
+    try:
+        conn = psycopg.connect(POSTGRES_CONNECTION)
+        PostgresChatMessageHistory.create_tables(conn, "chat_history")
+        conn.close()
+        logger.info("Chat history tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize chat history tables: {e}")
+        raise
+
+# Initialize tables on startup
+initialize_chat_history()
+
+def get_chat_history(user_id: UUID) -> List[BaseMessage]:
+    """Retrieve chat history for a user."""
+    try:
+        conn = psycopg.connect(POSTGRES_CONNECTION)
+        history = PostgresChatMessageHistory(
+            "chat_history",
+            str(user_id),  # Convert UUID to string for storage
+            sync_connection=conn
+        )
+        messages = history.get_messages()
+        conn.close()
+        # Keep only the last 10 messages
+        return messages[-10:] if messages else []
+    except Exception as e:
+        logger.error(f"Failed to get chat history: {e}")
+        return []
+
+def store_messages(user_id: UUID, user_message: str, bot_response: str):
+    """Store new messages in the chat history."""
+    try:
+        conn = psycopg.connect(POSTGRES_CONNECTION)
+        history = PostgresChatMessageHistory(
+            "chat_history",
+            str(user_id),  # Convert UUID to string for storage
+            sync_connection=conn
+        )
+
+        # Add the new messages
+        history.add_messages([
+            HumanMessage(content=user_message),
+            AIMessage(content=bot_response)
+        ])
+
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to store messages: {e}")
+
 @router.post("/bugreport")
-async def submit_bug_report(report: BugReportRequest):
+async def submit_bug_report(
+    report: BugReportRequest,
+    user_id: UUID = Depends(get_current_user)
+):
     try:
         # Initialize email service
         email_service = EmailService()
@@ -57,7 +120,7 @@ async def submit_bug_report(report: BugReportRequest):
             status_code=500,
             detail="Failed to submit bug report"
         )
-        
+
 def load_prompt_template() -> str:
     """Load the prompt template from file."""
     try:
@@ -75,20 +138,28 @@ def load_prompt_template() -> str:
 PROMPT_TEMPLATE = load_prompt_template()
 
 @router.post("", response_model=SupportBotResponse)
-async def get_support_response(request: SupportBotRequest) -> SupportBotResponse:
-    """
-    Process a support request and return a response.
-
-    The response may include special tags for UI components:
-    - <BugReport/> for the bug report form
-    - <TopicButton cmd="COMMAND" /> for topic suggestion buttons
-    """
+async def get_support_response(
+    request: SupportBotRequest,
+    user_id: UUID = Depends(get_current_user)
+) -> SupportBotResponse:
+    """Process a support request with persistent memory and return a response."""
     try:
-        # Prepare the prompt
+        # Get chat history for the authenticated user
+        chat_history = get_chat_history(user_id)
+
+        # Format chat history for the prompt
+        history_text = ""
+        if chat_history:
+            history_text = "\n\nPrevious conversation:\n" + "\n".join(
+                f"{'User' if isinstance(msg, HumanMessage) else 'Assistant'}: {msg.content}"
+                for msg in chat_history
+            )
+
+        # Prepare the prompt with history
         prompt = PROMPT_TEMPLATE.format(
             input=request.message,
             language=request.language
-        )
+        ) + history_text
 
         # Get response from OpenAI
         response = client.chat.completions.create(
@@ -113,17 +184,18 @@ async def get_support_response(request: SupportBotRequest) -> SupportBotResponse
         if not response_text:
             raise ValueError("Empty response from model")
 
+        # Store the conversation in PostgreSQL using the user's UUID
+        store_messages(user_id, request.message, response_text)
+
         # Validate that all tags are properly closed
         if response_text.count("<TopicButton") != response_text.count("/>"):
             logger.warning("Malformed TopicButton tags in response")
-            # Try to fix common issues
             response_text = response_text.replace("</TopicButton>", "/>")
 
         return SupportBotResponse(answer=response_text)
 
     except Exception as e:
         logger.error(f"Error processing support request: {e}")
-        # Return a user-friendly error message in the appropriate language
         error_messages = {
             "de": "Entschuldigung, es ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.",
             "en": "Sorry, an error occurred. Please try again later."

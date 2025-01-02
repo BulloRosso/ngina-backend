@@ -5,5 +5,6 @@
     pkgs.cargo
     pkgs.libxcrypt
     pkgs.bash
+    pkgs.postgresql
   ];
 }
