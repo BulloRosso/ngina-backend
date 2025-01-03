@@ -1,18 +1,23 @@
 # services/sentiment.py
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timedelta
 from models.memory import InterviewResponse, InterviewQuestion, MemoryCreate, Location, Category 
 import openai
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from supabase import create_client, Client
 import logging
 from services.knowledgemanagement import KnowledgeManagement, MemoryClassification
 from services.memory import MemoryService 
 import asyncio
+import random
 
 logger = logging.getLogger(__name__)
 
+class SessionStatus:
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    
 class EmpatheticInterviewer:
     def __init__(self):
         self.openai_client = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
@@ -312,3 +317,131 @@ class EmpatheticInterviewer:
                 # Add more languages as needed
             }
             return default_messages.get(language, default_messages["en"])
+
+    async def get_or_create_session(self, profile_id: UUID, language: str = "en") -> dict:
+        """
+        Gets an existing active session or creates a new one if none exists within 60 minutes.
+        Also handles cleanup of stale sessions with a 20% chance.
+        """
+        try:
+            # Calculate timestamp from 60 minutes ago
+            sixty_minutes_ago = datetime.utcnow() - timedelta(minutes=60)
+    
+            # Query for recent active session
+            result = self.supabase.table("interview_sessions")\
+                .select("*")\
+                .eq("profile_id", str(profile_id))\
+                .eq("status", SessionStatus.ACTIVE)\
+                .gte("started_at", sixty_minutes_ago.isoformat())\
+                .order("started_at", desc=True)\
+                .limit(1)\
+                .execute()
+    
+            # If recent active session exists, return it
+            if result.data:
+                session = result.data[0]
+                if await self.validate_session(session):
+                    logger.info(f"Reusing existing session {session['id']} for profile {profile_id}")
+                    return session
+    
+            # Randomly check and close stale sessions (20% chance)
+            if random.random() < 0.2:
+                await self.close_stale_sessions(profile_id)
+    
+            # Create new session
+            session_data = {
+                "id": str(uuid4()),
+                "profile_id": str(profile_id),
+                "category": "initial",
+                "started_at": datetime.utcnow().isoformat(),
+                "emotional_state": {"initial": "neutral"},
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+                "status": SessionStatus.ACTIVE
+            }
+    
+            result = self.supabase.table("interview_sessions").insert(session_data).execute()
+            logger.info(f"Created new session {session_data['id']} for profile {profile_id}")
+    
+            return result.data[0]
+    
+        except Exception as e:
+            logger.error(f"Error in get_or_create_session: {str(e)}")
+            raise Exception(f"Failed to get or create session: {str(e)}")
+    
+    async def validate_session(self, session: dict) -> bool:
+        """
+        Validates if a session is active and can be used.
+        """
+        try:
+            if session['status'] != SessionStatus.ACTIVE:
+                logger.warning(f"Session {session['id']} is not active")
+                return False
+    
+            # Check if session has been updated in the last 60 minutes
+            last_update = datetime.fromisoformat(session['updated_at'])
+            if datetime.utcnow() - last_update > timedelta(minutes=60):
+                logger.warning(f"Session {session['id']} has not been updated in over 60 minutes")
+                await self.complete_session(session['id'])
+                return False
+    
+            return True
+    
+        except Exception as e:
+            logger.error(f"Error validating session: {str(e)}")
+            return False
+    
+    async def complete_session(self, session_id: UUID) -> None:
+        """
+        Marks a session as completed and sets the completed_at timestamp.
+        """
+        try:
+            update_data = {
+                "status": SessionStatus.COMPLETED,
+                "completed_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+    
+            self.supabase.table("interview_sessions")\
+                .update(update_data)\
+                .eq("id", str(session_id))\
+                .execute()
+    
+            logger.info(f"Completed session {session_id}")
+    
+        except Exception as e:
+            logger.error(f"Error completing session {session_id}: {str(e)}")
+            raise
+    
+    async def close_stale_sessions(self, profile_id: Optional[UUID] = None) -> None:
+        """
+        Closes stale sessions that haven't been updated in over 60 minutes.
+        Can be scoped to a specific profile_id or run for all profiles.
+        """
+        try:
+            sixty_minutes_ago = datetime.utcnow() - timedelta(minutes=60)
+    
+            # Build base query
+            query = self.supabase.table("interview_sessions")\
+                .select("id")\
+                .eq("status", SessionStatus.ACTIVE)\
+                .lt("updated_at", sixty_minutes_ago.isoformat())
+    
+            # Add profile filter if specified
+            if profile_id:
+                query = query.eq("profile_id", str(profile_id))
+    
+            # Get stale sessions
+            result = query.execute()
+    
+            # Complete each stale session
+            for session in result.data:
+                await self.complete_session(session['id'])
+    
+            if len(result.data) > 0:
+                logger.info(f"Closed {len(result.data)} stale sessions" + 
+                           f" for profile {profile_id}" if profile_id else "")
+    
+        except Exception as e:
+            logger.error(f"Error closing stale sessions: {str(e)}")
+            # Don't raise the error since this is a cleanup task

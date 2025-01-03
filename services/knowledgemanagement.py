@@ -30,6 +30,14 @@ import time
 from openai import OpenAI
 import json
 
+"""
+ATTENTION this module heavily relies on the neo4j-graphrag package.
+
+CURRENT VERSION: 1.3.0 (16.12.2024)
+
+Watch for updates and pip install --upgrade neo4j-graphrag
+"""
+
 logger = logging.getLogger(__name__)
 
 NEO4J_URI = os.getenv("NEO4J_URI")
