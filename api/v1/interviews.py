@@ -6,6 +6,12 @@ from services.sentiment import EmpatheticInterviewer
 from models.memory import InterviewResponse, InterviewQuestion
 import logging
 from datetime import datetime, timedelta
+from fastapi import WebSocket
+from openai import OpenAI
+import os
+from starlette.websockets import WebSocketDisconnect
+import asyncio
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
@@ -152,3 +158,96 @@ async def process_response(
             status_code=500,
             detail=f"Failed to process response: {str(e)}"
         )
+
+@router.get("/{profile_id}/sessions")
+async def get_interview_sessions(profile_id: UUID):
+    """Get all interview sessions for a profile, excluding the initial backstory session"""
+    try:
+        interviewer = EmpatheticInterviewer()
+
+        # Query sessions, excluding the initial backstory session
+        result = interviewer.supabase.table("interview_sessions")\
+            .select("""
+                id,
+                started_at,
+                completed_at,
+                status,
+                emotional_state,
+                summary,
+                topics_of_interest
+            """)\
+            .eq("profile_id", str(profile_id))\
+            .neq("category", "initial")\
+            .order("started_at", desc=True)\
+            .execute()
+
+        if not result.data:
+            return []
+
+        # Process dates and format response
+        sessions = []
+        for session in result.data:
+            try:
+                # Parse timestamps if they exist
+                if session.get('started_at'):
+                    session['started_at'] = datetime.fromisoformat(session['started_at'])
+                if session.get('completed_at'):
+                    session['completed_at'] = datetime.fromisoformat(session['completed_at'])
+
+                sessions.append(session)
+            except Exception as e:
+                logger.error(f"Error processing session {session.get('id')}: {str(e)}")
+                continue
+
+        return sessions
+
+    except Exception as e:
+        logger.error(f"Error fetching interview sessions: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch interview sessions: {str(e)}"
+        )
+
+@router.websocket("/tts/{text_to_read}")
+async def text_to_speech(websocket: WebSocket, text_to_read: str):
+    try:
+        await websocket.accept()
+        openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        try:
+            # Decode the URL-encoded text
+            decoded_text = urllib.parse.unquote(text_to_read)
+            logger.info(f"Processing TTS for text: {decoded_text[:50]}...")
+
+            await websocket.send_text('|AUDIO_START|')
+
+            with openai_client.audio.speech.with_streaming_response.create(
+                model="tts-1",
+                voice="nova",
+                response_format="mp3",
+                input=decoded_text,
+            ) as response:
+                for chunk in response.iter_bytes(chunk_size=1024):
+                    await websocket.send_bytes(chunk)
+
+            await websocket.send_text('|AUDIO_END|')
+
+        except WebSocketDisconnect:
+            logger.info("Client disconnected normally")
+            return
+
+        except Exception as e:
+            logger.error(f"Error processing TTS request: {str(e)}")
+            try:
+                await websocket.send_text(f"Error: {str(e)}")
+            except:
+                pass
+
+    except Exception as e:
+        logger.error(f"Error in TTS websocket: {str(e)}")
+
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
