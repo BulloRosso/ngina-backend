@@ -1,6 +1,6 @@
 # services/sentiment.py
 from uuid import UUID, uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from models.memory import InterviewResponse, InterviewQuestion, MemoryCreate, Location, Category 
 import openai
 import os
@@ -27,11 +27,16 @@ class EmpatheticInterviewer:
         )
         self.knowledge_manager = KnowledgeManagement()
 
-    async def start_new_session(self, profile_id: UUID, language: str = "en") -> Dict[str, Any]:
-        """Start a new interview session for a profile."""
+    async def get_initial_question(self, profile_id: UUID, language: str = "en") -> str:
+        """
+        Generate the initial question for an interview in the specified language.
+        """
         try:
-            # First, fetch the profile to get the backstory
-            profile_result = self.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
+            # Fetch profile data
+            profile_result = self.supabase.table("profiles")\
+                .select("*")\
+                .eq("id", str(profile_id))\
+                .execute()
 
             if not profile_result.data:
                 raise Exception("Profile not found")
@@ -40,7 +45,7 @@ class EmpatheticInterviewer:
             backstory = profile.get("metadata", {}).get("backstory", "")
             name = f"{profile['first_name']} {profile['last_name']}"
 
-            # Create system prompt with backstory context and language
+            # Create system prompt
             system_prompt = f"""You are an empathetic interviewer helping {name} preserve their memories.
 
             Context about {name}:
@@ -54,7 +59,7 @@ class EmpatheticInterviewer:
 
             The entire response should be in {language} language only."""
 
-            # Generate personalized opening question using OpenAI
+            # Generate question using OpenAI
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -72,42 +77,17 @@ class EmpatheticInterviewer:
             )
 
             initial_question = response.choices[0].message.content
-            session_id = uuid4()
-            now = datetime.utcnow()
-
-            # Create session record
-            session_data = {
-                "id": str(session_id),
-                "profile_id": str(profile_id),
-                "category": "general",
-                "started_at": now.isoformat(),
-                "emotional_state": {"initial": "neutral"},
-                "created_at": now.isoformat(),
-                "updated_at": now.isoformat()
-            }
-
-            logger.debug(f"Creating session with data: {session_data}")
-
-            # Insert the session into Supabase
-            result = self.supabase.table("interview_sessions").insert(
-                session_data
-            ).execute()
-
-            logger.debug(f"Session creation result: {result}")
-
-            if not result.data:
-                raise Exception("Failed to create interview session record")
-
-            return {
-                "session_id": str(session_id),
-                "initial_question": initial_question,
-                "started_at": now.isoformat(),
-                "profile_id": str(profile_id)
-            }
+            return initial_question
 
         except Exception as e:
-            logger.error(f"Error starting interview session: {str(e)}")
-            raise Exception(f"Failed to start interview session: {str(e)}")
+            logger.error(f"Error generating initial question: {str(e)}")
+            # Return default messages based on language
+            default_messages = {
+                "en": "Could you share a meaningful memory from your life?",
+                "de": "Können Sie eine bedeutungsvolle Erinnerung aus Ihrem Leben teilen?"
+                # Add more languages as needed
+            }
+            return default_messages.get(language, default_messages["en"])
             
     async def process_interview_response(
         self,
@@ -318,56 +298,51 @@ class EmpatheticInterviewer:
             }
             return default_messages.get(language, default_messages["en"])
 
-    async def get_or_create_session(self, profile_id: UUID, language: str = "en") -> dict:
+    async def get_or_create_session(self, profile_id: UUID) -> dict:
         """
-        Gets an existing active session or creates a new one if none exists within 60 minutes.
-        Also handles cleanup of stale sessions with a 20% chance.
+        Gets an existing active session or creates a new one.
+        Also handles cleanup of stale sessions.
         """
         try:
-            # Calculate timestamp from 60 minutes ago
-            sixty_minutes_ago = datetime.utcnow() - timedelta(minutes=60)
-    
-            # Query for recent active session
+            # First, get any active session for this profile
             result = self.supabase.table("interview_sessions")\
                 .select("*")\
                 .eq("profile_id", str(profile_id))\
                 .eq("status", SessionStatus.ACTIVE)\
-                .gte("started_at", sixty_minutes_ago.isoformat())\
-                .order("started_at", desc=True)\
+                .order("created_at", desc=True)\
                 .limit(1)\
                 .execute()
-    
-            # If recent active session exists, return it
+
+            # If an active session exists, check if it's still valid
             if result.data:
                 session = result.data[0]
                 if await self.validate_session(session):
                     logger.info(f"Reusing existing session {session['id']} for profile {profile_id}")
                     return session
-    
-            # Randomly check and close stale sessions (20% chance)
-            if random.random() < 0.2:
-                await self.close_stale_sessions(profile_id)
-    
+
+            # If we get here, either no active session exists or it was invalid
+            # First clean up any stale sessions
+            await self.close_stale_sessions(profile_id)
+
             # Create new session
             session_data = {
                 "id": str(uuid4()),
                 "profile_id": str(profile_id),
-                "category": "initial",
-                "started_at": datetime.utcnow().isoformat(),
-                "emotional_state": {"initial": "neutral"},
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-                "status": SessionStatus.ACTIVE
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": SessionStatus.ACTIVE,
+                "last_question": None
             }
-    
+
             result = self.supabase.table("interview_sessions").insert(session_data).execute()
             logger.info(f"Created new session {session_data['id']} for profile {profile_id}")
-    
+
             return result.data[0]
-    
+
         except Exception as e:
             logger.error(f"Error in get_or_create_session: {str(e)}")
-            raise Exception(f"Failed to get or create session: {str(e)}")
+            raise
     
     async def validate_session(self, session: dict) -> bool:
         """
@@ -377,20 +352,21 @@ class EmpatheticInterviewer:
             if session['status'] != SessionStatus.ACTIVE:
                 logger.warning(f"Session {session['id']} is not active")
                 return False
-    
+
             # Check if session has been updated in the last 60 minutes
-            last_update = datetime.fromisoformat(session['updated_at'])
-            if datetime.utcnow() - last_update > timedelta(minutes=60):
+            last_update = datetime.fromisoformat(session['updated_at']).replace(tzinfo=timezone.utc)
+            current_time = datetime.now(timezone.utc)
+            if current_time - last_update > timedelta(minutes=60):
                 logger.warning(f"Session {session['id']} has not been updated in over 60 minutes")
                 await self.complete_session(session['id'])
                 return False
-    
+
             return True
-    
+
         except Exception as e:
             logger.error(f"Error validating session: {str(e)}")
             return False
-    
+
     async def complete_session(self, session_id: UUID) -> None:
         """
         Marks a session as completed and sets the completed_at timestamp.
@@ -416,7 +392,6 @@ class EmpatheticInterviewer:
     async def close_stale_sessions(self, profile_id: Optional[UUID] = None) -> None:
         """
         Closes stale sessions that haven't been updated in over 60 minutes.
-        Can be scoped to a specific profile_id or run for all profiles.
         """
         try:
             sixty_minutes_ago = datetime.utcnow() - timedelta(minutes=60)
@@ -444,4 +419,3 @@ class EmpatheticInterviewer:
     
         except Exception as e:
             logger.error(f"Error closing stale sessions: {str(e)}")
-            # Don't raise the error since this is a cleanup task

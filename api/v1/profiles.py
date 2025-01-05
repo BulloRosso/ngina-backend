@@ -86,7 +86,8 @@ async def get_profiles_for_user(user_id: UUID) -> List[Profile]:
                 if not profile_data.get('metadata'):
                     profile_data['metadata'] = {}
 
-                profile_data['metadata']['session_count'] = session_count_result.count
+                # Subtract 1 from the total count to exclude the initial session
+                profile_data['metadata']['session_count'] = max(0, session_count_result.count - 1)
 
                 profiles.append(Profile(**profile_data))
             except Exception as e:

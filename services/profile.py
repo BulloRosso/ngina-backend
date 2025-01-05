@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, UUID4
 from supabase import create_client, Client
@@ -40,6 +40,20 @@ class ProfileService:
         try:
             logger.info(f"Parsing backstory for profile {profile_id} in language {language}")
 
+            # Create initial session
+            session_data = {
+                "id": str(uuid4()),
+                "profile_id": str(profile_id),
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": "completed",  # Mark as completed since this is initialization
+                "completed_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            result = self.supabase.table("interview_sessions").insert(session_data).execute()
+            session_id = result.data[0]['id']
+            
             # Create profile context string
             pronoun = "him" if profile_data["gender"].lower() == "male" else "her"
             profile_context = f"The main character of our memories is {profile_data['first_name']} {profile_data['last_name']} which is of {profile_data['gender']} gender. When rewriting memories reference to {pronoun} as {profile_data['first_name']}."
@@ -50,30 +64,6 @@ class ProfileService:
             narrator_style = metadata.get('narrator_style', 'neutral')
             narrator_verbosity = metadata.get('narrator_verbosity', 'normal')
             
-            # Create single session for all initial memories
-            session_data = {
-                "id": str(uuid4()),
-                "profile_id": str(profile_id),
-                "category": "initial",
-                "started_at": datetime.utcnow().isoformat(),
-                "emotional_state": {"initial": "neutral"},
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
-            }
-
-            # Create session
-            try:
-                session_result = self.supabase.table("interview_sessions").insert(session_data).execute()
-                if not session_result.data:
-                    raise Exception("Failed to create interview session")
-                session_id = session_result.data[0]['id']
-                logger.info(f"Created interview session: {session_id}")
-            except Exception as e:
-                logger.error(f"Failed to create interview session: {str(e)}")
-                raise
-
-            # Use the same session_id for all memories
-
             # Create birth memory
             try:
                 # Handle place of birth parsing with better validation

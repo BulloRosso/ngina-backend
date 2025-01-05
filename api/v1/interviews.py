@@ -1,11 +1,11 @@
 # api/v1/interviews.py
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from typing import Dict, Any, Optional
 from uuid import UUID, uuid4
-from services.sentiment import EmpatheticInterviewer
+from services.sentiment import EmpatheticInterviewer, SessionStatus
 from models.memory import InterviewResponse, InterviewQuestion
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,  timezone
 from fastapi import WebSocket
 from openai import OpenAI
 import os
@@ -22,115 +22,60 @@ class SessionStatus:
     COMPLETED = "completed"
 
 @router.post("/{profile_id}/start")
-async def start_interview(profile_id: UUID, language: str = "en"):
-    """Start or resume an interview session"""
+async def start_interview(profile_id: UUID, language: str = "en") -> Dict[str, Any]:
+    """
+    Start a new interview session or return an existing active session.
+    Returns the session_id and initial question.
+    """
     try:
         interviewer = EmpatheticInterviewer()
+        logger.info(f"Starting interview for profile {profile_id}")
 
-        # Calculate timestamp from 60 minutes ago
-        sixty_minutes_ago = datetime.utcnow() - timedelta(minutes=60)
+        # Get or create session
+        session = await interviewer.get_or_create_session(profile_id)
 
-        # Query for recent active session
-        result = interviewer.supabase.table("interview_sessions")\
-            .select("*")\
-            .eq("profile_id", str(profile_id))\
-            .eq("status", SessionStatus.ACTIVE)\
-            .gte("updated_at", sixty_minutes_ago.isoformat())\
-            .order("started_at", desc=True)\
-            .limit(1)\
-            .execute()
-
-        # If recent active session exists, use it
-        if result.data:
-            session = result.data[0]
-            logger.info(f"Reusing existing session {session['id']} for profile {profile_id}")
-
-            # Generate question using existing session
-            question = await interviewer.generate_next_question(profile_id, session['id'], language)
-
-            return {
-                "session_id": session['id'],
-                "initial_question": question
-            }
-
-        # No recent session found, create new one
-        session_data = {
-            "id": str(uuid4()),
-            "profile_id": str(profile_id),
-            "category": "initial",
-            "started_at": datetime.utcnow().isoformat(),
-            "emotional_state": {"initial": "neutral"},
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-            "status": SessionStatus.ACTIVE
-        }
-
-        # Insert new session
-        result = interviewer.supabase.table("interview_sessions")\
-            .insert(session_data)\
-            .execute()
-
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to create session")
-
-        new_session = result.data[0]
-        logger.info(f"Created new session {new_session['id']} for profile {profile_id}")
-
-        # Generate initial question
-        question = await interviewer.generate_next_question(profile_id, new_session['id'], language)
+        # Get initial question
+        initial_question = await interviewer.get_initial_question(profile_id, language)
 
         return {
-            "session_id": new_session['id'],
-            "initial_question": question
+            "session_id": session["id"],
+            "initial_question": initial_question,
+            "started_at": session["started_at"]
         }
 
     except Exception as e:
-        logger.error(f"Error in start_interview: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start interview: {str(e)}"
-        )
+        logger.error(f"Start interview error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{profile_id}/response")
+@router.post("/{session_id}/response")
 async def process_response(
-    profile_id: UUID,
-    response: InterviewResponse,
-    session_id: UUID = Query(...)
+    session_id: UUID,
+    response: InterviewResponse
 ):
-    """Process a response and update session"""
+    """Process a response in the context of a specific session"""
     try:
         interviewer = EmpatheticInterviewer()
 
-        # Verify session is active and recent
+        # Get session data
         session_result = interviewer.supabase.table("interview_sessions")\
             .select("*")\
             .eq("id", str(session_id))\
-            .eq("status", SessionStatus.ACTIVE)\
             .execute()
 
         if not session_result.data:
             raise HTTPException(
-                status_code=400, 
-                detail="Session not found or no longer active"
+                status_code=404, 
+                detail="Session not found"
             )
 
         session = session_result.data[0]
+        profile_id = UUID(session['profile_id'])
 
-        # Check if session is too old
-        updated_at = datetime.fromisoformat(session['updated_at'])
-        if datetime.utcnow() - updated_at > timedelta(minutes=60):
-            # Auto-complete old session
-            interviewer.supabase.table("interview_sessions")\
-                .update({
-                    "status": SessionStatus.COMPLETED,
-                    "completed_at": datetime.utcnow().isoformat()
-                })\
-                .eq("id", str(session_id))\
-                .execute()
-
+        # Verify session is still valid
+        if not await interviewer.validate_session(session):
             raise HTTPException(
                 status_code=400,
-                detail="Session expired. Please start a new session."
+                detail="Session expired or inactive"
             )
 
         # Process the response
@@ -159,6 +104,85 @@ async def process_response(
             detail=f"Failed to process response: {str(e)}"
         )
 
+
+@router.post("/{session_id}/next_question")
+async def get_next_question(
+    session_id: UUID,
+    language: str = Query(default="en"),
+) -> Dict[str, str]:
+    """
+    Get the next question for an interview session.
+    """
+    try:
+        interviewer = EmpatheticInterviewer()
+
+        # Get current session
+        session_result = interviewer.supabase.table("interview_sessions")\
+            .select("*")\
+            .eq("id", str(session_id))\
+            .execute()
+
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        session = session_result.data[0]
+
+        # Verify session is active
+        if not await interviewer.validate_session(session):
+            raise HTTPException(
+                status_code=400,
+                detail="Session expired or inactive"
+            )
+
+        # Get next question based on last_question field
+        if not session.get('last_question'):
+            # Get initial question if no last question
+            question = await interviewer.get_initial_question(
+                UUID(session['profile_id']),
+                language
+            )
+        else:
+            # Get next question based on last question
+            question = await interviewer.generate_next_question(
+                UUID(session['profile_id']),
+                session_id,
+                language
+            )
+
+        # Update session with current question and timestamp
+        interviewer.supabase.table("interview_sessions")\
+            .update({
+                "last_question": question,
+                "updated_at": datetime.utcnow().isoformat()
+            })\
+            .eq("id", str(session_id))\
+            .execute()
+
+        return {"text": question}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error getting next question: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{session_id}/end")
+async def end_interview(session_id: UUID) -> Dict[str, str]:
+    """
+    End an interview session by marking it as completed.
+    """
+    try:
+        interviewer = EmpatheticInterviewer()
+
+        # Complete the session
+        await interviewer.complete_session(session_id)
+
+        return {"message": "Session ended successfully"}
+
+    except Exception as e:
+        logger.error(f"Error ending session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{profile_id}/sessions")
 async def get_interview_sessions(profile_id: UUID):
     """Get all interview sessions for a profile, excluding the initial backstory session"""
@@ -177,7 +201,6 @@ async def get_interview_sessions(profile_id: UUID):
                 topics_of_interest
             """)\
             .eq("profile_id", str(profile_id))\
-            .neq("category", "initial")\
             .order("started_at", desc=True)\
             .execute()
 
@@ -194,6 +217,7 @@ async def get_interview_sessions(profile_id: UUID):
                 if session.get('completed_at'):
                     session['completed_at'] = datetime.fromisoformat(session['completed_at'])
 
+                logger.info(f"Processing session {session['id']} for profile {profile_id}")
                 sessions.append(session)
             except Exception as e:
                 logger.error(f"Error processing session {session.get('id')}: {str(e)}")
@@ -251,3 +275,72 @@ async def text_to_speech(websocket: WebSocket, text_to_read: str):
             await websocket.close()
         except:
             pass
+
+@router.post("/summarize")
+async def summarize_interviews():
+    try:
+        interviewer = EmpatheticInterviewer()
+        client = OpenAI()
+
+        # Get completed sessions without summaries
+        sessions_result = interviewer.supabase.table("interview_sessions")\
+            .select("*")\
+            .eq("status", SessionStatus.COMPLETED)\
+            .is_("summary", "null")\
+            .execute()
+
+        if not sessions_result.data:
+            return {"message": "No sessions to summarize"}
+
+        for session in sessions_result.data:
+            # Get memories created during session
+            start_date = session['started_at']
+            end_date = session.get('completed_at') or datetime.utcnow().isoformat()
+
+            memories_result = interviewer.supabase.table("memories")\
+                .select("description")\
+                .eq("profile_id", session['profile_id'])\
+                .gte("created_at", start_date)\
+                .lte("created_at", end_date)\
+                .or_(f"updated_at.gte.{start_date},updated_at.lte.{end_date}")\
+                .execute()
+
+            if not memories_result.data:
+                continue
+
+            # Combine memory descriptions
+            memory_text = " ".join(m['description'] for m in memories_result.data)
+
+            # Generate summary
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a professional writer. Summarize the following text into 2 or 3 short sentences. Focus on the important things and do not include any details"
+                    },
+                    {
+                        "role": "user",
+                        "content": memory_text
+                    }
+                ],
+                temperature=0.2
+            )
+
+            summary = response.choices[0].message.content.strip()
+            logger.info(f"Generated summary for session {session['id']}: {summary}")
+
+            # Update session
+            interviewer.supabase.table("interview_sessions")\
+                .update({"summary": summary})\
+                .eq("id", session['id'])\
+                .execute()
+
+        return {"message": "Summaries generated successfully"}
+
+    except Exception as e:
+        logger.error(f"Error generating summaries: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate summaries: {str(e)}"
+        )
