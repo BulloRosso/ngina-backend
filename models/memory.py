@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Optional, Dict
 from enum import Enum
 from uuid import UUID, uuid4
+from pydantic.json import timedelta_isoformat
 
 class Category(str, Enum):
     CHILDHOOD = "childhood"
@@ -58,13 +59,26 @@ class MemoryUpdate(BaseModel):
     description: Optional[str] = None
     caption: Optional[str] = None  
     original_description: Optional[str] = None
-    time_period: Optional[datetime] = None
+    time_period: Optional[str] = None  # Keep as string instead of datetime
     location: Optional[dict] = None
     people: Optional[List[dict]] = None
     emotions: Optional[List[dict]] = None
     image_urls: Optional[List[str]] = None
     audio_url: Optional[str] = None
 
+    model_config = {
+        'json_encoders': {
+            datetime: lambda v: v.isoformat()
+        },
+        'populate_by_name': True
+    }
+
+    @classmethod
+    def validate_time_period(cls, v):
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+    
 class Memory(MemoryCreate):
     id: UUID4
     profile_id: UUID4

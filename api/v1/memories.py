@@ -19,35 +19,32 @@ router = APIRouter(prefix="/memories", tags=["memories"])
 async def update_memory(memory_id: UUID, memory: MemoryUpdate):
     """Update a memory by ID"""
     try:
-        logger.debug(f"Received update request for memory_id={memory_id}")
-        logger.debug(f"Update data: {memory.dict(exclude_unset=True)}")
+        # Add explicit print for immediate visibility
+        print(f"\n=== Update Memory Request ===")
+        print(f"Memory ID: {memory_id}")
+        print(f"Update Data: {memory.dict(exclude_unset=True)}")
+
+        logger.info(f"=== Update Memory Request ===")
+        logger.info(f"Memory ID: {memory_id}")
+        logger.info(f"Raw update data: {memory}")
 
         # Only include fields that were actually provided in the update
         update_data = memory.dict(exclude_unset=True)
+        logger.info(f"Processed update data: {update_data}")
 
-        # Ensure category is properly formatted if provided
-        if 'category' in update_data and isinstance(update_data['category'], str):
-            update_data['category'] = update_data['category'].replace('Category.', '')
-
-        # Convert time_period to ISO format if provided
-        if 'time_period' in update_data and isinstance(update_data['time_period'], datetime):
-            update_data['time_period'] = update_data['time_period'].isoformat()
+        if 'time_period' in update_data:
+            print(f"Time period in update: {update_data['time_period']}")
+            logger.info(f"Time period in update: {update_data['time_period']}")
 
         result = await MemoryService.update_memory(memory_id, update_data)
-
-        if not result:
-            raise HTTPException(
-                status_code=404,
-                detail="Memory not found"
-            )
+        print(f"Update result: {result}")
+        logger.info(f"Update result: {result}")
 
         return result
 
-    except HTTPException as he:
-        raise he
     except Exception as e:
         logger.error(f"Error updating memory: {str(e)}")
-        logger.error(traceback.format_exc())
+        print(f"Error updating memory: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to update memory: {str(e)}"

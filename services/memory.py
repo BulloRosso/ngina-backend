@@ -5,7 +5,7 @@ from models.memory import MemoryCreate
 from supabase import create_client, Client
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import traceback
 import io
@@ -77,59 +77,57 @@ class MemoryService:
             raise Exception(f"Failed to delete memory: {str(e)}")
 
     @classmethod
-    async def update_memory(cls, memory_id: UUID, memory_data: dict) -> bool:
+    async def update_memory(cls, memory_id: UUID, memory_data: dict) -> dict:
         """Update a memory by ID"""
         try:
-            logger.debug(f"Attempting to update memory with ID: {memory_id}")
-            logger.debug(f"Update data: {memory_data}")
+            logger.debug(f"Memory service received data for update: {memory_data}")
 
             instance = cls.get_instance()
-           
-            
-            # Handle time_period field name conversion
-            if "time_period" in memory_data:
-                time_period = memory_data["time_period"]
-                # Ensure it's in ISO format if it's not already
-                if isinstance(time_period, datetime):
-                    time_period = time_period.isoformat()
-                memory_data["time_period"] = time_period
 
-            update_data = {}
-            
-            # Copy existing fields
-            for field in ['category', 'description', 'time_period', 'location', 
-                         'people', 'emotions', 'image_urls', 'audio_url']:
-                if field in memory_data:
-                    update_data[field] = memory_data[field]
-                    
-            # Add new fields if they exist in the update data
+            # Create update data with proper JSON serialization
+            update_fields = {}
+
+            # Handle each field separately to ensure proper serialization
+            if 'category' in memory_data:
+                update_fields['category'] = memory_data['category']
+
+            if 'description' in memory_data:
+                update_fields['description'] = memory_data['description']
+
             if 'caption' in memory_data:
-                update_data['caption'] = memory_data['caption']
-            if 'original_description' in memory_data:
-                update_data['original_description'] = memory_data['original_description']
-                
-            # Add updated_at timestamp
-            update_data['updated_at'] = datetime.utcnow().isoformat()
+                update_fields['caption'] = memory_data['caption']
 
-            # Update the memory in Supabase
+            if 'time_period' in memory_data:
+                # Keep time_period as string, don't convert to datetime
+                update_fields['time_period'] = memory_data['time_period']
+                logger.debug(f"Setting time_period to: {update_fields['time_period']}")
+
+            if 'location' in memory_data:
+                update_fields['location'] = memory_data['location']
+
+            # Add updated_at timestamp as ISO string
+            update_fields['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+            logger.debug(f"Final update fields: {update_fields}")
+
+            # Update in Supabase
             result = instance.supabase.table(cls.table_name)\
-                .update(update_data)\
+                .update(update_fields)\
                 .eq("id", str(memory_id))\
                 .execute()
 
-            logger.debug(f"Update response: {result}")
+            logger.debug(f"Supabase update response: {result.data}")
 
-            # Check if update was successful
             if not result.data:
                 logger.warning(f"No memory found with ID {memory_id}")
-                return False
+                raise Exception("Memory not found")
 
             return result.data[0]
 
         except Exception as e:
-            logger.error(f"Error updating memory: {str(e)}")
+            logger.error(f"Error in update_memory: {str(e)}")
             logger.error(traceback.format_exc())
-            raise Exception(f"Failed to update memory: {str(e)}")
+            raise
             
     @staticmethod
     def get_instance():
