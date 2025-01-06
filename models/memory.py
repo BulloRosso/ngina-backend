@@ -76,8 +76,7 @@ class Memory(MemoryCreate):
 class InterviewResponse(BaseModel):
     text: str
     language: str
-    audio_url: Optional[str] = None
-    emotions_detected: Optional[List[Emotion]] = None
+    memory_id: Optional[str] = None
     session_id: Optional[UUID] = None  
     user_id: UUID
 

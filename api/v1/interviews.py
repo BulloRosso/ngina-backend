@@ -84,7 +84,8 @@ async def process_response(
             profile_id=profile_id,
             session_id=session_id,
             response_text=response.text,
-            language=response.language
+            language=response.language,
+            memory_id=response.memory_id 
         )
 
         # Update session timestamp

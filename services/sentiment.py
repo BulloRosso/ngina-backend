@@ -95,120 +95,122 @@ class EmpatheticInterviewer:
         profile_id: UUID,
         session_id: UUID,
         response_text: str,
-        language: str = "en"
+        language: str = "en",
+        memory_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Process a response from the interviewee and generate the next question.
-        """
+        """Process a response from the interviewee and generate the next question."""
         try:
-
-            # Second, fetch the profile
+            logger.info(f"*********** Received interview response for {memory_id} ")
+            
+            # Get profile data
             profile_basics = self.supabase.table("profiles").select("*").eq("id", str(profile_id)).execute()
 
             if not profile_basics.data:
                 raise Exception("Profile not found")
 
             profile_data = profile_basics.data[0]
-            metadata = profile_data.get('metadata', {})
+            memory_is_new = False
 
-            # Get narrative settings from metadata
-            narrator_perspective = metadata.get('narrator_perspective', 'ego')
-            narrator_style = metadata.get('narrator_style', 'neutral')
-            narrator_verbosity = metadata.get('narrator_verbosity', 'normal')
+            # If memory_id is provided, we treat this as a memory update
+            if memory_id:
+                logger.info(f"Updating existing memory {memory_id}")
 
-            logger.debug(f"Using profile settings - perspective: {narrator_perspective}, style: {narrator_style}, verbosity: {narrator_verbosity}")
+                # Get existing memory
+                memory_result = self.supabase.table("memories").select("*").eq("id", memory_id).execute()
 
-            # Analyze if the response is a memory and classify it with profile settings
-            classification = await KnowledgeManagement.analyze_response(
-                response_text=response_text, 
-                client=self.openai_client,
-                profile_data=profile_data, 
-                language=language,
-                narrator_perspective=narrator_perspective,
-                narrator_style=narrator_style,
-                narrator_verbosity=narrator_verbosity
-            )
+                if not memory_result.data:
+                    raise Exception("Memory not found")
 
-            logger.info("------- Analyzed response -------")
-            logger.info(f"is_memory={classification.is_memory} "
-                      f"category='{classification.category}' "
-                      f"location='{classification.location}' "
-                      f"timestamp='{classification.timestamp}'")
+                existing_memory = memory_result.data[0]
 
-            # Initialize memory_id as None
-            memory_id = None
-            
-            # If it's a memory, store it
-            if classification.is_memory:
-                logger.info(f"rewrittenText='{classification.rewritten_text}'")
-                logger.info(f"caption='{classification.caption}'")  
-                logger.info(f"narrator_perspective='{narrator_perspective}'")
-                
-                # Create memory with original description and caption
-                memory_data = MemoryCreate(
-                    category=classification.category,
-                    description=classification.rewritten_text,
-                    original_description=response_text,  # NEW
-                    caption=classification.caption,  # NEW
-                    time_period=datetime.fromisoformat(classification.timestamp),
-                    location=Location(
-                        name=classification.location if classification.location != "unbekannt" else "Unknown",
-                        city=None,
-                        country=None,
-                        description=None
-                    ) if classification.location else None
-                )
-                
-                memory_id = await MemoryService.create_memory(
-                    memory_data,
-                    profile_id,
-                    session_id
+                # Always analyze response to get rewritten text
+                classification = await KnowledgeManagement.analyze_response(
+                    response_text=response_text,
+                    client=self.openai_client,
+                    profile_data=profile_data,
+                    language=language
                 )
 
-                # Asynchronously update the knowledge graph
+                # Force is_memory to True for updates
+                classification.is_memory = True
+
+                # Append texts
+                updated_original = (existing_memory['original_description'] or '') + '\n' + response_text
+                updated_description = (existing_memory['description'] or '') + '\n' + classification.rewritten_text
+
+                # Update memory
+                self.supabase.table("memories").update({
+                    'original_description': updated_original,
+                    'description': updated_description,
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                }).eq('id', memory_id).execute()
+
+                memory_id_to_return = memory_id
+                memory_is_new = False
+
+            else:
+                # Normal flow for new memories
+                classification = await KnowledgeManagement.analyze_response(
+                    response_text=response_text,
+                    client=self.openai_client,
+                    profile_data=profile_data,
+                    language=language
+                )
+
+                memory_id_to_return = None
+
+                if classification.is_memory:
+                    # Create new memory
+                    memory_data = MemoryCreate(
+                        category=classification.category,
+                        description=classification.rewritten_text,
+                        original_description=response_text,
+                        caption=classification.caption,
+                        time_period=datetime.fromisoformat(classification.timestamp),
+                        location=Location(
+                            name=classification.location if classification.location != "unbekannt" else "Unknown",
+                            city=None,
+                            country=None,
+                            description=None
+                        ) if classification.location else None
+                    )
+
+                    memory_id_to_return = await MemoryService.create_memory(
+                        memory_data,
+                        profile_id,
+                        session_id
+                    )
+                    memory_is_new = True
+
+            # Update knowledge graph if we have a memory
+            if memory_id_to_return:
                 asyncio.create_task(self.knowledge_manager.append_to_rag(
-                    classification.rewritten_text, 
-                    str(profile_id), 
-                    str(memory_id), 
-                    classification.category, 
-                    classification.location
+                    classification.rewritten_text if classification.is_memory else response_text,
+                    str(profile_id),
+                    str(memory_id_to_return),
+                    classification.category if classification.is_memory else None,
+                    classification.location if classification.is_memory else None
                 ))
 
-                # Generate follow-up question based on the processed response
-                next_question = await self.generate_next_question(
-                    profile_id, 
-                    session_id,
-                    language
-                )
-            else:
-                # Use RAG for non-memory responses
-                logger.info("Using RAG for non-memory response")
-                next_question = await self.knowledge_manager.query_with_rag(response_text, str(profile_id))
-            
-            # Return default sentiment values instead of analyzing
-            default_sentiment = {
-                "joy": 0.5,
-                "sadness": 0.0,
-                "nostalgia": 0.5,
-                "intensity": 0.5
-            }
-
+            # Return result
             return {
-                "sentiment": default_sentiment,
-                "follow_up": next_question,
-                "is_memory": classification.is_memory,
-                "memory_id": memory_id
+                "sentiment": {"joy": 0.5, "nostalgia": 0.5},
+                "follow_up": await self.generate_next_question(profile_id, session_id, language),
+                "is_memory": True if memory_id else classification.is_memory,
+                "memory_id": memory_id_to_return,
+                "memory_is_new": memory_is_new
             }
 
         except Exception as e:
-            print(f"Error processing interview response: {str(e)}")
+            logger.error(f"Error processing interview response: {str(e)}")
             return {
                 "sentiment": {"joy": 0.5, "nostalgia": 0.5},
                 "follow_up": "Can you tell me more about that?",
                 "is_memory": False,
-                "memory_id": None
+                "memory_id": None,
+                "memory_is_new": False
             }
-
+    
     async def _analyze_sentiment(self, text: str) -> Dict[str, float]:
         """
         Analyze the emotional content of the response.
