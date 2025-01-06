@@ -1,5 +1,5 @@
 # api/v1/memories.py
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Depends
 from typing import List
 from uuid import UUID
 from models.memory import Memory, MemoryCreate, MemoryUpdate
@@ -9,12 +9,43 @@ import traceback
 from pydantic import BaseModel
 from datetime import datetime
 import io
+from dependencies.auth import get_current_user
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
+@router.get("/memory/{memory_id}")
+async def get_memory_by_id(
+   memory_id: UUID,
+   user_id: UUID = Depends(get_current_user)
+) -> Memory:
+   try:
+       memory_service = MemoryService.get_instance()
+
+       # Get memory with profile_id
+       result = memory_service.supabase.table("memories").select("*,profiles!inner(user_id)").eq(
+           "id", str(memory_id)
+       ).single().execute()
+
+       if not result.data:
+           raise HTTPException(status_code=404, detail="Memory not found")
+
+       # Check if memory belongs to user
+       if str(user_id) != result.data["profiles"]["user_id"]:
+           raise HTTPException(status_code=403, detail="Forbidden")
+
+       # Clean category format
+       if isinstance(result.data.get('category'), str):
+           result.data['category'] = result.data['category'].replace('Category.', '')
+
+       return Memory(**result.data)
+
+   except Exception as e:
+       logger.error(f"Error fetching memory: {str(e)}")
+       raise HTTPException(status_code=500, detail=str(e))
+       
 @router.put("/{memory_id}")
 async def update_memory(memory_id: UUID, memory: MemoryUpdate):
     """Update a memory by ID"""

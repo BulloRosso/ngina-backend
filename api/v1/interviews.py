@@ -23,26 +23,17 @@ class SessionStatus:
 
 @router.post("/{profile_id}/start")
 async def start_interview(profile_id: UUID, language: str = "en") -> Dict[str, Any]:
-    """
-    Start a new interview session or return an existing active session.
-    Returns the session_id and initial question.
-    """
     try:
         interviewer = EmpatheticInterviewer()
-        logger.info(f"Starting interview for profile {profile_id}")
-
-        # Get or create session
-        session = await interviewer.get_or_create_session(profile_id)
-
-        # Get initial question
-        initial_question = await interviewer.get_initial_question(profile_id, language)
+        session = await interviewer.get_or_create_session(profile_id) 
+        question, memory_id = await interviewer.get_initial_question(profile_id, language)  # Unpack both values
 
         return {
             "session_id": session["id"],
-            "initial_question": initial_question,
-            "started_at": session["started_at"]
+            "initial_question": question,
+            "started_at": session["started_at"],
+            "memory_id": memory_id
         }
-
     except Exception as e:
         logger.error(f"Start interview error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -111,9 +102,6 @@ async def get_next_question(
     session_id: UUID,
     language: str = Query(default="en"),
 ) -> Dict[str, str]:
-    """
-    Get the next question for an interview session.
-    """
     try:
         interviewer = EmpatheticInterviewer()
 
@@ -138,7 +126,7 @@ async def get_next_question(
         # Get next question based on last_question field
         if not session.get('last_question'):
             # Get initial question if no last question
-            question = await interviewer.get_initial_question(
+            question, _ = await interviewer.get_initial_question( # Unpack tuple here
                 UUID(session['profile_id']),
                 language
             )

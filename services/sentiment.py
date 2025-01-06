@@ -27,7 +27,46 @@ class EmpatheticInterviewer:
         )
         self.knowledge_manager = KnowledgeManagement()
 
-    async def get_initial_question(self, profile_id: UUID, language: str = "en") -> str:
+    async def get_initial_question(self, profile_id: UUID, language: str = "en") -> tuple[str, Optional[str]]:
+        try:
+            # Get most recent memory
+            memory_result = self.supabase.table("memories")\
+                .select("*")\
+                .eq("profile_id", str(profile_id))\
+                .order("created_at", desc=True)\
+                .limit(1)\
+                .execute()
+
+            if not memory_result.data:
+                # Fall back to default behavior if no memories exist
+                return (await self._generate_default_question(profile_id, language), None)
+
+            memory = memory_result.data[0]
+
+            # Generate question about this specific memory
+            system_prompt = f"""Generate a question in {language} about this memory that:
+            1. Asks for more details about specific aspects
+            2. Encourages elaboration on emotions and sensory experiences
+            3. Is warm and inviting
+            """
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": memory["description"]}
+                ],
+                max_tokens=150,
+                temperature=0.7
+            )
+
+            return (response.choices[0].message.content, memory["id"])
+
+        except Exception as e:
+            logger.error(f"Error generating initial question: {str(e)}")
+            return (self._get_default_message(language), None)
+            
+    async def _generate_default_question(self, profile_id: UUID, language: str = "en") -> str:
         """
         Generate the initial question for an interview in the specified language.
         """
