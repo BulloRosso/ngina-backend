@@ -231,7 +231,6 @@ class MemoryService:
 
     @classmethod
     async def delete_media_from_memory(cls, memory_id: UUID, filename: str) -> bool:
-        """Delete a media file from storage and update the memory record"""
         try:
             logger.debug(f"Deleting media {filename} from memory {memory_id}")
             instance = cls.get_instance()
@@ -248,16 +247,13 @@ class MemoryService:
             # Get current image URLs
             current_urls = memory.data[0].get('image_urls', [])
 
-            # Generate the storage URL that matches our stored URL pattern
-            storage_url = instance.supabase.storage\
-                .from_(cls.storage_bucket)\
-                .get_public_url(f"{memory_id}/{filename}")
+            # Instead of generating a URL to compare, find URLs containing the filename
+            updated_urls = [url for url in current_urls if filename not in url]
 
-            # Find and remove the URL from the list
-            updated_urls = [url for url in current_urls if url != storage_url]
-
-            if len(updated_urls) == len(current_urls):
-                logger.warning(f"URL not found in memory record: {storage_url}")
+            # Log the changes for debugging
+            logger.debug(f"Current URLs: {current_urls}")
+            logger.debug(f"Updated URLs: {updated_urls}")
+            logger.debug(f"Removing URLs containing filename: {filename}")
 
             # Delete from storage
             try:

@@ -1,5 +1,5 @@
 # api/v1/profiles.py
-from fastapi import APIRouter, HTTPException, File, Form, Query, UploadFile
+from fastapi import APIRouter, HTTPException, File, Form, Query, UploadFile, Depends
 from typing import Optional
 from uuid import UUID
 import json
@@ -17,6 +17,7 @@ from io import BytesIO
 import logging
 from pydantic import BaseModel
 from typing import List, Optional
+from dependencies.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class ProfileRating(BaseModel):
     memories_count: int
     memories_with_images: int
     rating: str
-    
+
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
 # Initialize Supabase client
@@ -35,20 +36,29 @@ supabase = create_client(
 )
 
 @router.get("")
-async def list_profiles() -> List[Profile]:
+async def list_profiles(user_id: UUID = Depends(get_current_user)) -> List[Profile]:
     """Get all profiles"""
     try:
         profiles = await ProfileService.get_all_profiles()
-        return profiles
+        # Filter profiles to only show those belonging to the authenticated user
+        filtered_profiles = [p for p in profiles if str(p.user_id) == str(user_id)]
+        return filtered_profiles
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch profiles: {str(e)}")
-        
+
 @router.get("/user/{user_id}")
-async def get_profiles_for_user(user_id: UUID) -> List[Profile]:
+async def get_profiles_for_user(
+    user_id: UUID,
+    current_user: UUID = Depends(get_current_user)
+) -> List[Profile]:
     """Get all profiles for a specific user"""
     try:
+        # Verify user is accessing their own profiles
+        if str(current_user) != str(user_id):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+
         service = ProfileService()
 
         # Get profiles only for the specified user
@@ -108,18 +118,22 @@ async def get_profiles_for_user(user_id: UUID) -> List[Profile]:
 async def create_profile(
     profile_image: UploadFile = File(...),
     profile: str = Form(...),
-    language: str = Form("en")  # Add language parameter with default "en"
+    language: str = Form("en"),
+    user_id: UUID = Depends(get_current_user)
 ):
     try:
         profile_data = json.loads(profile)
-        
+
+        # Verify user is creating profile for themselves
+        if str(user_id) != str(profile_data.get("user_id")):
+            raise HTTPException(status_code=403, detail="Cannot create profile for another user")
+
         first_name = profile_data.get("first_name")
         last_name = profile_data.get("last_name")
-        user_id = profile_data.get("user_id")
-        
-        if not first_name or not last_name or not user_id:  # Update validation
+
+        if not first_name or not last_name or not user_id:
             raise ValueError("first_name, last_name, and user_id are required.")
-        
+
         profile_data["date_of_birth"] = datetime.strptime(profile_data["date_of_birth"], "%Y-%m-%d").date()
 
         if not first_name or not last_name:
@@ -200,7 +214,10 @@ async def create_profile(
         )
 
 @router.get("/{profile_id}")
-async def get_profile(profile_id: UUID):
+async def get_profile(
+    profile_id: UUID,
+    user_id: UUID = Depends(get_current_user)
+):
     """Get a profile by ID"""
     try:
         logger.debug(f"Fetching profile with ID: {profile_id}")
@@ -211,6 +228,10 @@ async def get_profile(profile_id: UUID):
             logger.debug(f"Profile not found: {profile_id}")
             raise HTTPException(status_code=404, detail="Profile not found")
 
+        # Verify user owns this profile
+        if str(profile.user_id) != str(user_id):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+
         return profile
     except HTTPException as he:
         raise he
@@ -220,11 +241,22 @@ async def get_profile(profile_id: UUID):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{profile_id}")
-async def delete_profile(profile_id: UUID):
+async def delete_profile(
+    profile_id: UUID,
+    user_id: UUID = Depends(get_current_user)
+):
     """Delete a profile and all associated data"""
     try:
         logger.debug(f"Deleting profile with ID: {profile_id}")
         service = ProfileService()
+
+        # Verify ownership before deletion
+        profile = await service.get_profile(profile_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        if str(profile.user_id) != str(user_id):
+            raise HTTPException(status_code=403, detail="Cannot delete another user's profile")
 
         # Delete profile and all associated data
         success = await service.delete_profile(profile_id)
@@ -242,10 +274,23 @@ async def delete_profile(profile_id: UUID):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/rating/{profile_id}", response_model=ProfileRating)
-async def get_profile_rating(profile_id: UUID, language: str = Query(default="en")):
+async def get_profile_rating(
+    profile_id: UUID,
+    language: str = Query(default="en"),
+    user_id: UUID = Depends(get_current_user)
+):
     """Get rating statistics for a profile"""
     try:
         service = ProfileService()
+
+        # Verify ownership before getting rating
+        profile = await service.get_profile(profile_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        if str(profile.user_id) != str(user_id):
+            raise HTTPException(status_code=403, detail="Cannot access another user's profile rating")
+
         return await service.get_profile_rating(profile_id, language)
     except Exception as e:
         logger.error(f"Error getting profile rating: {str(e)}")

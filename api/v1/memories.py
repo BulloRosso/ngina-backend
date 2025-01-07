@@ -18,36 +18,40 @@ router = APIRouter(prefix="/memories", tags=["memories"])
 
 @router.get("/memory/{memory_id}")
 async def get_memory_by_id(
-   memory_id: UUID,
-   user_id: UUID = Depends(get_current_user)
+    memory_id: UUID,
+    user_id: UUID = Depends(get_current_user)
 ) -> Memory:
-   try:
-       memory_service = MemoryService.get_instance()
+    try:
+        memory_service = MemoryService.get_instance()
 
-       # Get memory with profile_id
-       result = memory_service.supabase.table("memories").select("*,profiles!inner(user_id)").eq(
-           "id", str(memory_id)
-       ).single().execute()
+        # Get memory with profile_id
+        result = memory_service.supabase.table("memories").select("*,profiles!inner(user_id)").eq(
+            "id", str(memory_id)
+        ).single().execute()
 
-       if not result.data:
-           raise HTTPException(status_code=404, detail="Memory not found")
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Memory not found")
 
-       # Check if memory belongs to user
-       if str(user_id) != result.data["profiles"]["user_id"]:
-           raise HTTPException(status_code=403, detail="Forbidden")
+        # Check if memory belongs to user
+        if str(user_id) != result.data["profiles"]["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
-       # Clean category format
-       if isinstance(result.data.get('category'), str):
-           result.data['category'] = result.data['category'].replace('Category.', '')
+        # Clean category format
+        if isinstance(result.data.get('category'), str):
+            result.data['category'] = result.data['category'].replace('Category.', '')
 
-       return Memory(**result.data)
+        return Memory(**result.data)
 
-   except Exception as e:
-       logger.error(f"Error fetching memory: {str(e)}")
-       raise HTTPException(status_code=500, detail=str(e))
-       
+    except Exception as e:
+        logger.error(f"Error fetching memory: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/{memory_id}")
-async def update_memory(memory_id: UUID, memory: MemoryUpdate):
+async def update_memory(
+    memory_id: UUID,
+    memory: MemoryUpdate,
+    user_id: UUID = Depends(get_current_user)
+):
     """Update a memory by ID"""
     try:
         # Add explicit print for immediate visibility
@@ -58,6 +62,18 @@ async def update_memory(memory_id: UUID, memory: MemoryUpdate):
         logger.info(f"=== Update Memory Request ===")
         logger.info(f"Memory ID: {memory_id}")
         logger.info(f"Raw update data: {memory}")
+
+        # Verify ownership
+        memory_service = MemoryService.get_instance()
+        result = memory_service.supabase.table("memories").select("profiles!inner(user_id)").eq(
+            "id", str(memory_id)
+        ).single().execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        if str(user_id) != result.data["profiles"]["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         # Only include fields that were actually provided in the update
         update_data = memory.dict(exclude_unset=True)
@@ -82,12 +98,27 @@ async def update_memory(memory_id: UUID, memory: MemoryUpdate):
         )
 
 @router.get("/{profile_id}")
-async def get_memories_by_profile(profile_id: UUID) -> List[Memory]:
+async def get_memories_by_profile(
+    profile_id: UUID,
+    user_id: UUID = Depends(get_current_user)
+) -> List[Memory]:
     """Get all memories for a specific profile"""
     try:
         logger.debug(f"Fetching memories for profile_id={profile_id}")
 
         memory_service = MemoryService.get_instance()
+
+        # First verify profile ownership
+        profile_result = memory_service.supabase.table("profiles").select("user_id").eq(
+            "id", str(profile_id)
+        ).single().execute()
+
+        if not profile_result.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        if str(user_id) != profile_result.data["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
         result = memory_service.supabase.table("memories").select("*").eq(
             "profile_id", str(profile_id)
         ).order('created_at', desc=True).execute()
@@ -117,17 +148,30 @@ async def get_memories_by_profile(profile_id: UUID) -> List[Memory]:
             status_code=500,
             detail=f"Failed to fetch memories: {str(e)}"
         )
-        
+
 @router.post("")
 async def create_memory(
     request: Request,
     memory: MemoryCreate,
     profile_id: UUID,
-    session_id: UUID
+    session_id: UUID,
+    user_id: UUID = Depends(get_current_user)
 ):
     try:
         logger.debug(f"Received create memory request for profile_id={profile_id}, session_id={session_id}")
         logger.debug(f"Memory data: {memory.dict()}")
+
+        # Verify profile ownership
+        memory_service = MemoryService.get_instance()
+        profile_result = memory_service.supabase.table("profiles").select("user_id").eq(
+            "id", str(profile_id)
+        ).single().execute()
+
+        if not profile_result.data:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        if str(user_id) != profile_result.data["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         # Verify the session exists first
         session_exists = await MemoryService.verify_session(session_id, profile_id)
@@ -157,10 +201,25 @@ async def create_memory(
         )
 
 @router.delete("/{memory_id}")
-async def delete_memory(memory_id: UUID):
+async def delete_memory(
+    memory_id: UUID,
+    user_id: UUID = Depends(get_current_user)
+):
     """Delete a memory by ID"""
     try:
         logger.debug(f"Received delete request for memory_id={memory_id}")
+
+        # Verify ownership
+        memory_service = MemoryService.get_instance()
+        result = memory_service.supabase.table("memories").select("profiles!inner(user_id)").eq(
+            "id", str(memory_id)
+        ).single().execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        if str(user_id) != result.data["profiles"]["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         deleted = await MemoryService.delete_memory(memory_id)
 
@@ -183,10 +242,26 @@ async def delete_memory(memory_id: UUID):
         )
 
 @router.delete("/{memory_id}/media/{filename}")
-async def delete_media_from_memory(memory_id: UUID, filename: str):
+async def delete_media_from_memory(
+    memory_id: UUID,
+    filename: str,
+    user_id: UUID = Depends(get_current_user)
+):
     """Delete a media file from a memory"""
     try:
         logger.debug(f"Deleting media {filename} from memory {memory_id}")
+
+        # Verify ownership
+        memory_service = MemoryService.get_instance()
+        result = memory_service.supabase.table("memories").select("profiles!inner(user_id)").eq(
+            "id", str(memory_id)
+        ).single().execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        if str(user_id) != result.data["profiles"]["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         result = await MemoryService.delete_media_from_memory(memory_id, filename)
 
@@ -201,16 +276,29 @@ async def delete_media_from_memory(memory_id: UUID, filename: str):
             status_code=500,
             detail=f"Failed to delete media: {str(e)}"
         )
-        
+
 @router.post("/{memory_id}/media")
 async def add_media_to_memory(
     memory_id: UUID,
     files: List[UploadFile] = File(...),
+    user_id: UUID = Depends(get_current_user)
 ):
     """Add media files to a memory"""
     try:
         logger.debug(f"Received media upload request for memory_id={memory_id}")
         logger.debug(f"Number of files: {len(files)}")
+
+        # Verify ownership
+        memory_service = MemoryService.get_instance()
+        result = memory_service.supabase.table("memories").select("profiles!inner(user_id)").eq(
+            "id", str(memory_id)
+        ).single().execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        if str(user_id) != result.data["profiles"]["user_id"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         # Read and validate each file
         file_contents = []
