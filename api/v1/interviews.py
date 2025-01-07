@@ -1,17 +1,17 @@
 # api/v1/interviews.py
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends, WebSocket
 from typing import Dict, Any, Optional
 from uuid import UUID, uuid4
 from services.sentiment import EmpatheticInterviewer, SessionStatus
 from models.memory import InterviewResponse, InterviewQuestion
 import logging
-from datetime import datetime, timedelta,  timezone
-from fastapi import WebSocket
+from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 import os
 from starlette.websockets import WebSocketDisconnect
 import asyncio
 import urllib.parse
+from dependencies.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,34 @@ class SessionStatus:
     ACTIVE = "active"
     COMPLETED = "completed"
 
+async def verify_profile_ownership(profile_id: UUID, user_id: UUID, interviewer: EmpatheticInterviewer):
+    """Verify that the user owns the profile"""
+    profile_result = interviewer.supabase.table("profiles")\
+        .select("user_id")\
+        .eq("id", str(profile_id))\
+        .single()\
+        .execute()
+
+    if not profile_result.data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if str(profile_result.data["user_id"]) != str(user_id):
+        raise HTTPException(status_code=403, detail="Access forbidden")
+
 @router.post("/{profile_id}/start")
-async def start_interview(profile_id: UUID, language: str = "en") -> Dict[str, Any]:
+async def start_interview(
+    profile_id: UUID, 
+    language: str = "en",
+    user_id: UUID = Depends(get_current_user)
+) -> Dict[str, Any]:
     try:
         interviewer = EmpatheticInterviewer()
+
+        # Verify profile ownership
+        await verify_profile_ownership(profile_id, user_id, interviewer)
+
         session = await interviewer.get_or_create_session(profile_id) 
-        question, memory_id = await interviewer.get_initial_question(profile_id, language)  # Unpack both values
+        question, memory_id = await interviewer.get_initial_question(profile_id, language)
 
         return {
             "session_id": session["id"],
@@ -41,33 +63,32 @@ async def start_interview(profile_id: UUID, language: str = "en") -> Dict[str, A
 @router.post("/{session_id}/response")
 async def process_response(
     session_id: UUID,
-    response: InterviewResponse
+    response: InterviewResponse,
+    user_id: UUID = Depends(get_current_user)
 ):
-    """Process a response in the context of a specific session"""
     try:
         interviewer = EmpatheticInterviewer()
 
         # Get session data
         session_result = interviewer.supabase.table("interview_sessions")\
-            .select("*")\
+            .select("*,profiles!inner(user_id)")\
             .eq("id", str(session_id))\
+            .single()\
             .execute()
 
         if not session_result.data:
-            raise HTTPException(
-                status_code=404, 
-                detail="Session not found"
-            )
+            raise HTTPException(status_code=404, detail="Session not found")
 
-        session = session_result.data[0]
+        # Verify ownership
+        if str(session_result.data["profiles"]["user_id"]) != str(user_id):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+
+        session = session_result.data
         profile_id = UUID(session['profile_id'])
 
         # Verify session is still valid
         if not await interviewer.validate_session(session):
-            raise HTTPException(
-                status_code=400,
-                detail="Session expired or inactive"
-            )
+            raise HTTPException(status_code=400, detail="Session expired or inactive")
 
         # Process the response
         result = await interviewer.process_interview_response(
@@ -96,42 +117,42 @@ async def process_response(
             detail=f"Failed to process response: {str(e)}"
         )
 
-
 @router.post("/{session_id}/next_question")
 async def get_next_question(
     session_id: UUID,
     language: str = Query(default="en"),
+    user_id: UUID = Depends(get_current_user)
 ) -> Dict[str, str]:
     try:
         interviewer = EmpatheticInterviewer()
 
         # Get current session
         session_result = interviewer.supabase.table("interview_sessions")\
-            .select("*")\
+            .select("*,profiles!inner(user_id)")\
             .eq("id", str(session_id))\
+            .single()\
             .execute()
 
         if not session_result.data:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        session = session_result.data[0]
+        # Verify ownership
+        if str(session_result.data["profiles"]["user_id"]) != str(user_id):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+
+        session = session_result.data
 
         # Verify session is active
         if not await interviewer.validate_session(session):
-            raise HTTPException(
-                status_code=400,
-                detail="Session expired or inactive"
-            )
+            raise HTTPException(status_code=400, detail="Session expired or inactive")
 
         # Get next question based on last_question field
         if not session.get('last_question'):
-            # Get initial question if no last question
-            question, _ = await interviewer.get_initial_question( # Unpack tuple here
+            question, _ = await interviewer.get_initial_question(
                 UUID(session['profile_id']),
                 language
             )
         else:
-            # Get next question based on last question
             question = await interviewer.generate_next_question(
                 UUID(session['profile_id']),
                 session_id,
@@ -156,16 +177,28 @@ async def get_next_question(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{session_id}/end")
-async def end_interview(session_id: UUID) -> Dict[str, str]:
-    """
-    End an interview session by marking it as completed.
-    """
+async def end_interview(
+    session_id: UUID,
+    user_id: UUID = Depends(get_current_user)
+) -> Dict[str, str]:
     try:
         interviewer = EmpatheticInterviewer()
 
+        # Verify session ownership
+        session_result = interviewer.supabase.table("interview_sessions")\
+            .select("profiles!inner(user_id)")\
+            .eq("id", str(session_id))\
+            .single()\
+            .execute()
+
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if str(session_result.data["profiles"]["user_id"]) != str(user_id):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+
         # Complete the session
         await interviewer.complete_session(session_id)
-
         return {"message": "Session ended successfully"}
 
     except Exception as e:
@@ -173,12 +206,16 @@ async def end_interview(session_id: UUID) -> Dict[str, str]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{profile_id}/sessions")
-async def get_interview_sessions(profile_id: UUID):
-    """Get all interview sessions for a profile, excluding the initial backstory session"""
+async def get_interview_sessions(
+    profile_id: UUID,
+    user_id: UUID = Depends(get_current_user)
+):
     try:
         interviewer = EmpatheticInterviewer()
 
-        # Query sessions, excluding the initial backstory session
+        # Verify profile ownership
+        await verify_profile_ownership(profile_id, user_id, interviewer)
+
         result = interviewer.supabase.table("interview_sessions")\
             .select("""
                 id,
@@ -196,11 +233,9 @@ async def get_interview_sessions(profile_id: UUID):
         if not result.data:
             return []
 
-        # Process dates and format response
         sessions = []
         for session in result.data:
             try:
-                # Parse timestamps if they exist
                 if session.get('started_at'):
                     session['started_at'] = datetime.fromisoformat(session['started_at'])
                 if session.get('completed_at'):
@@ -225,10 +260,14 @@ async def get_interview_sessions(profile_id: UUID):
 async def text_to_speech(websocket: WebSocket, text_to_read: str):
     try:
         await websocket.accept()
+
+        # Here we could add authentication for WebSocket,
+        # but since it's a single-use connection for TTS,
+        # rate limiting might be more appropriate
+
         openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
         try:
-            # Decode the URL-encoded text
             decoded_text = urllib.parse.unquote(text_to_read)
             logger.info(f"Processing TTS for text: {decoded_text[:50]}...")
 
@@ -266,14 +305,14 @@ async def text_to_speech(websocket: WebSocket, text_to_read: str):
             pass
 
 @router.post("/summarize")
-async def summarize_interviews():
+async def summarize_interviews(user_id: UUID = Depends(get_current_user)):
     try:
         interviewer = EmpatheticInterviewer()
         client = OpenAI()
 
         # Get completed sessions without summaries
         sessions_result = interviewer.supabase.table("interview_sessions")\
-            .select("*")\
+            .select("*,profiles!inner(user_id)")\
             .eq("status", SessionStatus.COMPLETED)\
             .is_("summary", "null")\
             .execute()
@@ -282,7 +321,11 @@ async def summarize_interviews():
             return {"message": "No sessions to summarize"}
 
         for session in sessions_result.data:
-            # Get memories created during session
+            # Verify ownership of each session
+            if str(session["profiles"]["user_id"]) != str(user_id):
+                logger.warning(f"Unauthorized summary attempt for session {session['id']}")
+                continue
+
             start_date = session['started_at']
             end_date = session.get('completed_at') or datetime.utcnow().isoformat()
 
@@ -297,10 +340,8 @@ async def summarize_interviews():
             if not memories_result.data:
                 continue
 
-            # Combine memory descriptions
             memory_text = " ".join(m['description'] for m in memories_result.data)
 
-            # Generate summary
             response = client.chat.completions.create(
                 model="gpt-4",
                 messages=[
@@ -319,7 +360,6 @@ async def summarize_interviews():
             summary = response.choices[0].message.content.strip()
             logger.info(f"Generated summary for session {session['id']}: {summary}")
 
-            # Update session
             interviewer.supabase.table("interview_sessions")\
                 .update({"summary": summary})\
                 .eq("id", session['id'])\

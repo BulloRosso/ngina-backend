@@ -1,5 +1,5 @@
 # api/v1/chat.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from uuid import UUID
 import logging
@@ -12,6 +12,7 @@ from typing import List
 from langchain_postgres import PostgresChatMessageHistory
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from services.profile import ProfileService
+from dependencies.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ async def store_messages(profile_id: UUID, user_message: str, bot_response: str)
     except Exception as e:
         logger.error(f"Failed to store messages: {e}")
 
-async def get_system_prompt(profile_id: UUID) -> str:
+async def get_system_prompt(profile_id: UUID, user_id: UUID) -> str:
     """Get personalized system prompt based on profile data."""
     try:
         profile_service = ProfileService()
@@ -72,6 +73,10 @@ async def get_system_prompt(profile_id: UUID) -> str:
 
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
+
+        # Verify user owns this profile
+        if str(profile.user_id) != str(user_id):
+            raise HTTPException(status_code=403, detail="Access forbidden")
 
         # Format birth date
         birth_date = profile.date_of_birth.strftime("%B %d, %Y")
@@ -99,13 +104,16 @@ async def get_system_prompt(profile_id: UUID) -> str:
         raise
 
 @router.post("", response_model=ChatResponse)
-async def process_chat_message(query: ChatQuery):
+async def process_chat_message(
+    query: ChatQuery,
+    user_id: UUID = Depends(get_current_user)
+):
     try:
         logger.info(f"Processing chat message for profile {query.profile_id}")
         logger.debug(f"Query text: {query.query_text}")
 
-        # Get system prompt based on profile
-        system_prompt = await get_system_prompt(query.profile_id)
+        # Get system prompt based on profile and verify ownership
+        system_prompt = await get_system_prompt(query.profile_id, user_id)
 
         # Get chat history for this profile
         chat_history = await get_chat_history(query.profile_id)
@@ -123,7 +131,7 @@ async def process_chat_message(query: ChatQuery):
         answer = await knowledge_manager.query_with_rag(
             query_text=query.query_text + history_text,
             profile_id=str(query.profile_id),
-            system_prompt=system_prompt  # Pass the personalized system prompt
+            system_prompt=system_prompt
         )
 
         # Create interaction data for Supabase
