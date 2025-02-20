@@ -135,6 +135,32 @@ def get_image_selector_metadata():
         }
     }
 
+def get_discover_me_metadata():
+    return {
+        "schemaName": "ngina-metadata.0.9",
+        "metadata": {
+            "name": "discover_me_agent",
+            "title": {
+                "de": "Discovery Beispiel Agent",
+                "en": "Discovery Example Agent"
+            },
+            "description": {
+                "de": "Verwenden Sie diesen Agenten, um die Discovery-Funktion zu testen.",
+                "en": "Use this agent to test the Discovery function."
+            },
+            "maxRuntimeSeconds": 20
+        },
+        "credentials": {},
+        "input": {
+            "category": {"type": "text", "description": "Kategorie, die gesucht werden soll"},
+            "style": {"type": "text", "description": "Stil, die gesucht werden soll"},
+            "count": {"type": "number", "description": "Anzahl der Ergebnisse, die geliefert werden sollen"}
+        },
+        "output": {
+            "images": {"type": "array", "description": "Ergebnisse, die geliefert werden sollen" }
+        }
+    }
+
 @router.get("/real-estate-db")
 async def get_real_estate_metadata_endpoint():
     return get_real_estate_metadata()
@@ -165,4 +191,12 @@ async def get_image_selector_metadata_endpoint():
 
 @router.post("/image-selector")
 async def post_image_selector_endpoint(request: AgentInvocation):
+    return {"message": "What a beautiful day!"}
+
+@router.get("/discover-me")
+async def get_discover_me_metadata_endpoint():
+    return get_discover_me_metadata()
+
+@router.post("/discover-me")
+async def post_discover_me_endpoint(request: AgentInvocation):
     return {"message": "What a beautiful day!"}
