@@ -108,6 +108,33 @@ create trigger secure_credentials_insert_trigger
   for each row
   execute function secure_credentials_insert();
 
+-- Create delete trigger function
+create or replace function secure_credentials_delete() returns trigger as $$
+begin
+  -- Get the secret_id before deleting
+  with secret_to_delete as (
+    select secret_id 
+    from secure_credentials_vault 
+    where id = OLD.id and user_id = OLD.user_id
+  )
+  -- Delete from vault.secrets
+  delete from vault.secrets 
+  where id in (select secret_id from secret_to_delete);
+
+  -- Delete the record from the base table
+  delete from secure_credentials_vault
+  where id = OLD.id and user_id = OLD.user_id;
+
+  return OLD;
+end;
+$$ language plpgsql;
+
+-- Create delete trigger
+create trigger secure_credentials_delete_trigger
+  instead of delete on secure_credentials
+  for each row
+  execute function secure_credentials_delete();
+
 -- Enable Row Level Security
 alter table secure_credentials_vault enable row level security;
 
