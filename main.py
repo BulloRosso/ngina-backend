@@ -7,12 +7,14 @@ from dotenv import load_dotenv
 import logging
 import os
 
-app = FastAPI(title="Noblivion API")
+app = FastAPI(title="nginA API")
+
+frontend_url = os.environ['FRONTEND_URL']
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://8ede5a9c-1536-4919-b14f-82f6fd92faca-00-bvc5u3f2ay1d.janeway.replit.dev",
-                "https://noblivion.replit.app"],
+    allow_origins=["http://localhost:5173", frontend_url,
+                "https://ngina.replit.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,8 +40,8 @@ supabase = create_client(
 async def root():
    return {
        "status": "ready",
-       "app": "Noblivion Backend",
-       "version": "1.0.0"
+       "app": "nginA Backend",
+       "version": "0.1.0"
    }
     
 app.include_router(v1_router, prefix="/api")
