@@ -1,17 +1,23 @@
 # api/v1/agents.py
 from fastapi import APIRouter, HTTPException
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from models.agent import Agent, AgentCreate
 from supabase import create_client
 import logging
 from datetime import datetime
-from pydantic import ValidationError, UUID4
+from pydantic import ValidationError, UUID4, BaseModel
 import os
 import httpx
 from models.agent import I18nContent, SchemaField
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
+class AgentTestRequest(BaseModel):
+    input: Dict[str, Any]
+    
 class AgentService:
     def __init__(self):
         self.supabase = create_client(
@@ -107,7 +113,167 @@ class AgentService:
                 status_code=500,
                 detail=f"Agent did not respond: {str(e)}"
             )
-            
+
+    # Inside the AgentService class, update the test_agent method:
+
+    # Inside the AgentService class, update the test_agent method:
+
+    async def test_agent(self, agent_id: str, test_data: AgentTestRequest) -> Dict[str, Any]:
+        try:
+            logger.info(f"Testing agent {agent_id} with test data: {test_data}")
+
+            # First get the agent to verify it exists and get the endpoint
+            agent = await self.get_agent(agent_id)
+
+            if not agent.agent_endpoint:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Agent doesn't have an endpoint configured"
+                )
+
+            # Validate that all required input fields are present and have correct types
+            if agent.input:
+                for field_name, schema in agent.input.items():
+                    if field_name not in test_data.input:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Missing required input field: {field_name}"
+                        )
+
+                    # Type validation
+                    field_value = test_data.input[field_name]
+                    expected_type = schema.type.lower()
+
+                    # Validate number type
+                    if expected_type == 'number':
+                        try:
+                            if isinstance(field_value, str):
+                                # Try to convert string to float
+                                test_data.input[field_name] = float(field_value)
+                            elif not isinstance(field_value, (int, float)):
+                                raise ValueError
+                        except ValueError:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Field '{field_name}' must be a number, got: {field_value}"
+                            )
+
+                    # Validate text type
+                    elif expected_type == 'text':
+                        if not isinstance(field_value, str):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Field '{field_name}' must be a string, got: {type(field_value).__name__}"
+                            )
+
+                    # Validate array type
+                    elif expected_type == 'array':
+                        if not isinstance(field_value, list):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Field '{field_name}' must be an array, got: {type(field_value).__name__}"
+                            )
+
+                    # Validate boolean type
+                    elif expected_type == 'boolean':
+                        if not isinstance(field_value, bool):
+                            if isinstance(field_value, str):
+                                # Try to convert string to boolean
+                                value_lower = field_value.lower()
+                                if value_lower in ('true', 'false'):
+                                    test_data.input[field_name] = value_lower == 'true'
+                                else:
+                                    raise HTTPException(
+                                        status_code=400,
+                                        detail=f"Field '{field_name}' must be a boolean, got: {field_value}"
+                                    )
+                            else:
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=f"Field '{field_name}' must be a boolean, got: {type(field_value).__name__}"
+                                )
+
+            logger.info(f"Sending validated test data to agent endpoint: {agent.agent_endpoint}")
+
+            # Prepare the request to the agent endpoint
+            request_data = {
+                "input": test_data.input
+            }
+
+            # Make the request to the agent endpoint
+            async with httpx.AsyncClient() as client:
+                try:
+                    logger.info(f"Calling agent endpoint {agent.agent_endpoint} with data {test_data.input}")
+
+                    response = await client.post(
+                        agent.agent_endpoint,
+                        json=request_data,
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        },
+                        timeout=float(agent.max_execution_time_secs or 30.0)
+                    )
+
+                    logger.debug(f"Agent endpoint response status: {response.status_code}")
+                    logger.debug(f"Agent endpoint response headers: {response.headers}")
+                    logger.debug(f"Agent endpoint response content: {response.text[:500]}")
+
+                    # Check if the request was successful
+                    response.raise_for_status()
+
+                    # Try to parse the response as JSON
+                    try:
+                        result = response.json()
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Agent returned invalid JSON response: {response.text[:200]}"
+                        )
+
+                    # Validate the response against the agent's output schema if defined
+                    if agent.output:
+                        for field_name, schema in agent.output.items():
+                            if field_name not in result:
+                                raise HTTPException(
+                                    status_code=422,
+                                    detail=f"Agent response missing required output field: {field_name}"
+                                )
+
+                    return result
+
+                except httpx.TimeoutException:
+                    raise HTTPException(
+                        status_code=504,
+                        detail="Agent execution timed out"
+                    )
+                except httpx.HTTPStatusError as e:
+                        try:
+                            error_json = e.response.json()
+                            error_detail = error_json.get('detail', str(error_json))
+                        except ValueError:
+                            error_detail = e.response.text[:200]
+
+                        logger.error(f"Agent endpoint returned error: {error_detail}")
+                        raise HTTPException(
+                            status_code=e.response.status_code,
+                            detail=f"Agent returned error: {error_detail}"
+                        )
+                except httpx.RequestError as e:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Failed to communicate with agent: {str(e)}"
+                    )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error(f"Error testing agent: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to test agent: {str(e)}"
+            )
+    
     async def get_agent(self, agent_id: str) -> Agent:
         try:
             # Validate UUID format
@@ -294,3 +460,15 @@ async def discover_agent(data: Dict[str, str]):
 
     service = AgentService()
     return await service.discover_agent(data["agentDiscoveryUrl"])
+
+@router.post("/{agent_id}/test", response_model=Dict[str, Any])
+async def test_agent(agent_id: str, test_data: AgentTestRequest):
+    try:
+        service = AgentService()
+        return await service.test_agent(agent_id, test_data)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
