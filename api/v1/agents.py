@@ -195,11 +195,6 @@ class AgentService:
 
             logger.info(f"Sending validated test data to agent endpoint: {agent.agent_endpoint}")
 
-            # Prepare the request to the agent endpoint
-            request_data = {
-                "input": test_data.input
-            }
-
             # Make the request to the agent endpoint
             async with httpx.AsyncClient() as client:
                 try:
@@ -207,7 +202,7 @@ class AgentService:
 
                     response = await client.post(
                         agent.agent_endpoint,
-                        json=request_data,
+                        json=test_data.input,
                         headers={
                             "Accept": "application/json",
                             "Content-Type": "application/json"

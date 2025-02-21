@@ -1,5 +1,5 @@
 # api/v1/mockup_agents.py
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from pydantic import BaseModel
 from typing import Dict, Union, Optional
 from datetime import datetime
@@ -43,17 +43,28 @@ def get_real_estate_metadata():
         },
         "credentials": {},
         "input": {
-            "region": {"type": "text"},
-            "price_range": {"type": "text"},
-            "property_type": {"type": "text"}
+            "region": {"type": "text", 
+                      "description": "Mandatory parameter. Region, z.B. 'Berlin'"},
+            "min_price": {"type": "number",
+                         "description": "Mandatory parameter. Minimal price in EUR, z.B. '100000'"},
+            "property_type": {"type": "text",
+                             "description": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Medieval'"}
         },
         "output": {
-            "name": {"type": "text"},
-            "address": {"type": "text"},
-            "price": {"type": "number"},
-            "property_type": {"type": "text"},
-            "region": {"type": "text"},
-            "image_url": {"type": "text"}
+            "results": [
+                 { "house": {
+                    "name": {"type": "text",
+                            "description": "Name of the property"},
+                    "address": {"type": "text",
+                               "description": "An address like 'Weinberstr. 29, 90607 Rückersdorf'"},
+                    "price": {"type": "number", 
+                             "description": "Price in EUR"},
+                    "property_type": {"type": "text", 
+                    "description": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Medieval'"},
+                    "image_url": {"type": "url",
+                                 "description": "Public URL to the image of the property"}
+                }}
+            ]
         }
     }
 
@@ -74,12 +85,20 @@ def get_html_email_metadata():
         },
         "credentials": {},
         "input": {
-            "template": {"type": "text"},
-            "content": {"type": "text"},
-            "style": {"type": "text"}
+            "recipients": {"type": "array",
+                          "description": "An string array of email addresses"},
+            "template": {"type": "text", 
+                         "description": "Mandatory parameter. Available templates are 'business', 'romantic' or 'family'."},
+            "content": {"type": "text",
+                         "description": "Mandatory parameter. The textual content of the email in markdown format."},
+            "style": {"type": "text",
+                         "description": "Optional Parameter. Available styles are 'colorful' or 'calm'"}
         },
         "output": {
-            "html_content": {"type": "text/html"}
+            "success": {"type": "boolean", 
+                        "description": "TRUE is success, FALSE is failure"},
+            "error": {"type": "text", 
+                      "description": "error message in case of failure"}
         }
     }
 
@@ -89,8 +108,8 @@ def get_personalized_writer_metadata():
         "metadata": {
             "name": "personalized_writer_agent",
             "title": {
-                "de": "Personalisierter Schreibassistent",
-                "en": "Personalized Writing Assistant"
+                "de": "Beschreibt ein Bild.",
+                "en": "Describes an image."
             },
             "description": {
                 "de": "Erstellt personalisierte Texte",
@@ -100,12 +119,16 @@ def get_personalized_writer_metadata():
         },
         "credentials": {},
         "input": {
-            "topic": {"type": "text"},
-            "style": {"type": "text"},
-            "length": {"type": "number"}
+            "topic": {"type": "text",
+                     "description": "Mandatory parameter. Name of the object to descirbe, e.g. 'My cute poodle Cookie'"},
+            "img_url": {"type": "url",
+                      "description": "Mandatory parameter. The public url of an jpg or png image to be analyzed" },
+            "max_length": {"type": "number",
+                          "description": "Optional parameter. Maximum length of the generated text in words. Default is 500"}
         },
         "output": {
-            "content": {"type": "text"}
+            "content": {"type": "text",
+                       "description": "The text which was created as description of the image provided as input."}
         }
     }
 
@@ -161,6 +184,10 @@ def get_discover_me_metadata():
         }
     }
 
+@router.head("/real-estate-db")
+async def head_real_estate_endpoint():
+    return Response(headers={"x-alive": "true"})
+
 @router.get("/real-estate-db")
 async def get_real_estate_metadata_endpoint():
     return get_real_estate_metadata()
@@ -168,6 +195,10 @@ async def get_real_estate_metadata_endpoint():
 @router.post("/real-estate-db")
 async def post_real_estate_endpoint(request: AgentInvocation):
     return {"message": "What a beautiful day!"}
+
+@router.head("/html-email")
+async def head_html_email_endpoint():
+    return Response(headers={"x-alive": "true"})
 
 @router.get("/html-email")
 async def get_html_email_metadata_endpoint():
@@ -177,6 +208,10 @@ async def get_html_email_metadata_endpoint():
 async def post_html_email_endpoint(request: AgentInvocation):
     return {"message": "What a beautiful day!"}
 
+@router.head("/personalized-writer")
+async def head_personalized_writer_endpoint():
+    return Response(headers={"x-alive": "true"})
+
 @router.get("/personalized-writer")
 async def get_personalized_writer_metadata_endpoint():
     return get_personalized_writer_metadata()
@@ -185,6 +220,10 @@ async def get_personalized_writer_metadata_endpoint():
 async def post_personalized_writer_endpoint(request: AgentInvocation):
     return {"message": "What a beautiful day!"}
 
+@router.head("/image-selector")
+async def head_image_selector_endpoint():
+    return Response(headers={"x-alive": "true"})
+
 @router.get("/image-selector")
 async def get_image_selector_metadata_endpoint():
     return get_image_selector_metadata()
@@ -192,6 +231,10 @@ async def get_image_selector_metadata_endpoint():
 @router.post("/image-selector")
 async def post_image_selector_endpoint(request: AgentInvocation):
     return {"message": "What a beautiful day!"}
+
+@router.head("/discover-me")
+async def head_discover_me_endpoint():
+    return Response(headers={"x-alive": "true"})
 
 @router.get("/discover-me")
 async def get_discover_me_metadata_endpoint():
