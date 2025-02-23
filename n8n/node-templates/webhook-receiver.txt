@@ -1,0 +1,19 @@
+{
+  "id": "${{node-uuid}}",
+  "name": "${{node-name}}",
+  "webhookId": "${{webhook-uuid}}"
+
+  "parameters": {
+    "httpMethod": "POST",
+    "path": "${{webhook-uuid}}",
+    "responseMode": "responseNode",
+    "options": {}
+  },
+  "type": "n8n-nodes-base.webhook",
+  "typeVersion": 2,
+  "position": [
+    -380,
+    0
+  ]
+ 
+}

@@ -1,0 +1,17 @@
+{
+  "id": "${{node-uuid}}",
+  "name": "{{node-name}}",
+
+  "parameters": {
+    "respondWith": "json",
+    "responseBody": "={\n  \"myField\": \"value\"\n}",
+    "options": {}
+  },
+  "type": "n8n-nodes-base.respondToWebhook",
+  "typeVersion": 1.1,
+  "position": [
+    60,
+    0
+  ],
+
+}

@@ -1,0 +1,21 @@
+{
+  "id": "${{node-uuid}}",
+  "name": "${{node-name}}",
+  "webhookId": "${{webhook-id}}",
+
+  "parameters": {
+    "resume": "webhook",
+    "httpMethod": "POST",
+    "limitWaitTime": true,
+    "resumeUnit": "seconds",
+    "resumeAmount": ${{wait-time-seconds}},
+    "options": {}
+  },
+  "type": "n8n-nodes-base.wait",
+  "typeVersion": 1.1,
+  "position": [
+    60,
+    -240
+  ]
+  
+}

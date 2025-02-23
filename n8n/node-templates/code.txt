@@ -1,0 +1,15 @@
+{
+  "id": "${{node-uuid}}",
+  "name": "${{node-name}}",
+
+  "parameters": {
+    "jsCode": "${{generated-code}}"
+  },
+  "type": "n8n-nodes-base.code",
+  "typeVersion": 2,
+  "position": [
+    -160,
+    0
+  ]
+ 
+}

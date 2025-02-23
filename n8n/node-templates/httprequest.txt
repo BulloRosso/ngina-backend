@@ -1,0 +1,25 @@
+{
+  "id": "${{node-uuid}}",
+  "name": "${{node-name}}",
+
+  "parameters": {
+    "url": "https://google.com",
+    "sendHeaders": true,
+    "headerParameters": {
+      "parameters": [
+        {}
+      ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "=",
+    "options": {}
+  },
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4.2,
+  "position": [
+    -60,
+    -360
+  ]
+ 
+}

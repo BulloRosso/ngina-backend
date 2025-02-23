@@ -1,9 +1,10 @@
 # api/v1/mockup_agents.py
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
-from typing import Dict, Union, Optional
+from typing import Dict, Union, Any
 from datetime import datetime
 import json
+import asyncio
 
 router = APIRouter(prefix="/mockup-agents", tags=["mockup-agents"])
 
@@ -60,12 +61,54 @@ def get_real_estate_metadata():
                     "price": {"type": "number", 
                              "description": "Price in EUR"},
                     "property_type": {"type": "text", 
-                    "description": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Medieval'"},
+                    "description": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Futuristic'"},
                     "image_url": {"type": "url",
                                  "description": "Public URL to the image of the property"}
                 }}
             ]
         }
+    }
+
+async def get_real_estate_response():
+
+    # Non-blocking wait for 3 to simulate AI processing
+    await asyncio.sleep(3)
+    
+    return {
+        "results": [
+             { "house": {
+                "name": "Hollyhill House",
+                "address": "In the middle of the street 3, 8121 Ulbucerque",
+                "price": 520000,
+                "property_type": "Classic",
+                "image_url": "https://commons.wikimedia.org/wiki/Category:Boarding_houses#/media/File:Durkin_Boarding_House_Park_City_Utah.jpeg"
+             }
+            },
+            { "house": {
+                "name": "Villa les hussards",
+                "address": "In the center of the street 3, 8121 Belgere",
+                "price": 1000500,
+                "property_type": "Contemporary",
+                "image_url": "https://commons.wikimedia.org/wiki/Category:Modernist_houses_in_Belgium#/media/File:Belgique_-_Rixensart_-_Villa_les_Hussards_-_01.jpg"
+              }
+            },
+            { "house": {
+                "name": "Villa Tugendhat",
+                "address": "On the crest 4, 8121 Brno",
+                "price": 370000,
+                "property_type": "Contemporary",
+                "image_url": "https://commons.wikimedia.org/wiki/Category:Villa_Tugendhat#/media/File:Vila_Tugendhat_Brno_2016_5.jpg"
+              }
+            },
+            { "house": {
+                "name": "Futuro Houses",
+                "address": "In the middle of nowhere, 8121 Wanli",
+                "price": 87700,
+                "property_type": "Futuristic",
+                "image_url": "https://commons.wikimedia.org/wiki/Category:Futuro#/media/File:Futuro_Village,_Wanli_10.jpg"
+              }
+            }
+        ]
     }
 
 def get_html_email_metadata():
@@ -102,6 +145,15 @@ def get_html_email_metadata():
         }
     }
 
+async def get_html_email_response():
+
+    # Non-blocking wait for 3 to simulate AI processing
+    await asyncio.sleep(3)
+    
+    return {
+        "success": true
+    }
+
 def get_personalized_writer_metadata():
     return {
         "schemaName": "ngina-metadata.0.9",
@@ -130,6 +182,15 @@ def get_personalized_writer_metadata():
             "content": {"type": "text",
                        "description": "The text which was created as description of the image provided as input."}
         }
+    }
+
+async def get_personalized_writer_response():
+    
+    # Non-blocking wait for 3 to simulate AI processing
+    await asyncio.sleep(3)
+    
+    return  {
+        "content": "This is the description for the selected house. In demo mode this is not very interesting to read."
     }
 
 def get_image_selector_metadata():
@@ -184,6 +245,8 @@ def get_discover_me_metadata():
         }
     }
 
+# ---------- real estate db lookup  ----------
+
 @router.head("/real-estate-db")
 async def head_real_estate_endpoint():
     return Response(headers={"x-alive": "true"})
@@ -193,8 +256,10 @@ async def get_real_estate_metadata_endpoint():
     return get_real_estate_metadata()
 
 @router.post("/real-estate-db")
-async def post_real_estate_endpoint(request: AgentInvocation):
-    return {"message": "What a beautiful day!"}
+async def post_real_estate_endpoint(request: Dict[str, Any]):
+    return await get_real_estate_response()
+
+# --------- send email demo service ----------------------
 
 @router.head("/html-email")
 async def head_html_email_endpoint():
@@ -205,8 +270,10 @@ async def get_html_email_metadata_endpoint():
     return get_html_email_metadata()
 
 @router.post("/html-email")
-async def post_html_email_endpoint(request: AgentInvocation):
-    return {"message": "What a beautiful day!"}
+async def post_html_email_endpoint(request: Dict[str, Any]):
+    return await get_html_email_response()
+
+# --------- personalized writer demo service ----------------------
 
 @router.head("/personalized-writer")
 async def head_personalized_writer_endpoint():
@@ -217,8 +284,10 @@ async def get_personalized_writer_metadata_endpoint():
     return get_personalized_writer_metadata()
 
 @router.post("/personalized-writer")
-async def post_personalized_writer_endpoint(request: AgentInvocation):
-    return {"message": "What a beautiful day!"}
+async def post_personalized_writer_endpoint(request: Dict[str, Any]):
+    return await get_personalized_writer_response()
+
+# --------- image selector demo service ----------------------
 
 @router.head("/image-selector")
 async def head_image_selector_endpoint():
@@ -229,8 +298,10 @@ async def get_image_selector_metadata_endpoint():
     return get_image_selector_metadata()
 
 @router.post("/image-selector")
-async def post_image_selector_endpoint(request: AgentInvocation):
-    return {"message": "What a beautiful day!"}
+async def post_image_selector_endpoint(request: Dict[str, Any]):
+    return request
+
+# --------- discover me demo service ----------------------
 
 @router.head("/discover-me")
 async def head_discover_me_endpoint():
@@ -241,5 +312,5 @@ async def get_discover_me_metadata_endpoint():
     return get_discover_me_metadata()
 
 @router.post("/discover-me")
-async def post_discover_me_endpoint(request: AgentInvocation):
-    return {"message": "What a beautiful day!"}
+async def post_discover_me_endpoint(request: Dict[str, Any]):
+    return request
