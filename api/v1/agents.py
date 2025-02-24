@@ -91,6 +91,7 @@ class AgentService:
                 "credits_per_run": agent_data.get("credits_per_run", 0),
                 "workflow_id": agent_data.get("workflow_id"),
                 "stars": agent_data.get("stars", 0),
+                "icon_svg": agent_data.get("icon_svg"),
                 "image_url": agent_data.get("image_url"),
                 "max_execution_time_secs": agent_data.get("max_execution_time_secs"),
                 "agent_endpoint": agent_data.get("agent_endpoint")
@@ -154,6 +155,7 @@ class AgentService:
                     },
                     "input": input_schema,
                     "output": output_schema,
+                    "icon_svg": discovery_data["metadata"].get("icon_svg"),
                     "max_execution_time_secs": discovery_data["metadata"].get("maxRuntimeSeconds"),
                     "agent_endpoint": discovery_url
                 }
