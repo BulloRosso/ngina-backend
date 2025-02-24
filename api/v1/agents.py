@@ -10,10 +10,65 @@ import os
 import httpx
 from models.agent import I18nContent, SchemaField
 import logging
+from genson import SchemaBuilder
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+def process_schema(data: Any) -> Any:
+    """
+    Process input/output data into a JSON schema.
+    If data already contains a JSON schema, return it as is.
+    Otherwise, generate a schema from the data using genson.
+    """
+    # If it's already a JSON schema, return as is
+    if isinstance(data, dict) and data.get("$schema") == "http://json-schema.org/schema#":
+        return data
+
+    # Generate schema from data using genson
+    builder = SchemaBuilder()
+    builder.add_object(data)
+    schema = builder.to_schema()
+
+    # Extract and add descriptions
+    descriptions = extract_field_descriptions(data)
+    add_descriptions_to_schema(schema, descriptions)
+
+    return schema
+
+def extract_field_descriptions(example_data):
+    """Extract descriptions from a single object"""
+    descriptions = {}
+    def process_object(obj, path=""):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                current_path = f"{path}.{key}" if path else key
+                if isinstance(value, dict):
+                    process_object(value, current_path)
+                elif isinstance(value, list) and value:
+                    # For arrays, only process the first item if it exists
+                    if isinstance(value[0], (dict, list)):
+                        process_object(value[0], current_path)
+                    else:
+                        descriptions[current_path] = str(value[0])
+                else:
+                    descriptions[current_path] = str(value)
+
+    process_object(example_data)
+    return descriptions
+
+def add_descriptions_to_schema(schema, descriptions, path=""):
+    """Add descriptions to schema fields"""
+    if isinstance(schema, dict):
+        if schema.get('type') == 'object' and 'properties' in schema:
+            for prop_name, prop_schema in schema['properties'].items():
+                current_path = f"{path}.{prop_name}" if path else prop_name
+                if current_path in descriptions:
+                    prop_schema['description'] = descriptions[current_path]
+                add_descriptions_to_schema(prop_schema, descriptions, current_path)
+        elif schema.get('type') == 'array' and 'items' in schema:
+            add_descriptions_to_schema(schema['items'], descriptions, path)
 
 class AgentTestRequest(BaseModel):
     input: Dict[str, Any]
@@ -25,7 +80,6 @@ class AgentService:
             supabase_key=os.getenv("SUPABASE_KEY")
         )
 
-    # Update the create_agent method in AgentService class
     async def create_agent(self, agent_data: dict) -> Agent:
         try:
             # Prepare the data for Supabase directly
@@ -83,7 +137,12 @@ class AgentService:
                         detail=f"Agent sent unknown response (incompatible schema): {str(discovery_data)[:200]}"
                     )
 
-                # Prepare the data structure directly without using Pydantic models
+                # Process input schema - now handles a single object
+                input_schema = process_schema(discovery_data.get("input"))
+
+                # Process output schema - now handles a single object
+                output_schema = process_schema(discovery_data.get("output"))
+
                 agent_data = {
                     "title": {
                         "de": discovery_data["metadata"]["title"].get("de"),
@@ -93,14 +152,8 @@ class AgentService:
                         "de": discovery_data["metadata"]["description"].get("de"),
                         "en": discovery_data["metadata"]["description"].get("en")
                     },
-                    "input": {
-                        k: {"type": v["type"]} 
-                        for k, v in discovery_data["input"].items()
-                    },
-                    "output": {
-                        k: {"type": v["type"], "description": v.get("subtype")} 
-                        for k, v in discovery_data["output"].items()
-                    },
+                    "input": input_schema,
+                    "output": output_schema,
                     "max_execution_time_secs": discovery_data["metadata"].get("maxRuntimeSeconds"),
                     "agent_endpoint": discovery_url
                 }
@@ -113,10 +166,6 @@ class AgentService:
                 status_code=500,
                 detail=f"Agent did not respond: {str(e)}"
             )
-
-    # Inside the AgentService class, update the test_agent method:
-
-    # Inside the AgentService class, update the test_agent method:
 
     async def test_agent(self, agent_id: str, test_data: AgentTestRequest) -> Dict[str, Any]:
         try:

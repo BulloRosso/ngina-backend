@@ -1,6 +1,6 @@
 # models/agent.py
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, UUID4, ConfigDict
 
 class SchemaField(BaseModel):
@@ -14,8 +14,8 @@ class I18nContent(BaseModel):
 class AgentBase(BaseModel):
     title: Optional[I18nContent] = None
     description: Optional[I18nContent] = None
-    input: Optional[Dict[str, SchemaField]] = None
-    output: Optional[Dict[str, SchemaField]] = None
+    input: Optional[Any] = None
+    output: Optional[Any] = None
     credits_per_run: Optional[int] = 0
     workflow_id: Optional[str] = None
     stars: Optional[int] = 0

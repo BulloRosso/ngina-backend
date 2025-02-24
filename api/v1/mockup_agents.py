@@ -44,28 +44,61 @@ def get_real_estate_metadata():
         },
         "credentials": {},
         "input": {
-            "region": {"type": "text", 
-                      "description": "Mandatory parameter. Region, z.B. 'Berlin'"},
-            "min_price": {"type": "number",
-                         "description": "Mandatory parameter. Minimal price in EUR, z.B. '100000'"},
-            "property_type": {"type": "text",
-                             "description": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Medieval'"}
+            "region": "Mandatory parameter. Region, z.B. 'Berlin'",
+            "min_price": 100000,
+            "property_type": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Medieval'"
         },
         "output": {
-            "results": [
-                 { "house": {
-                    "name": {"type": "text",
-                            "description": "Name of the property"},
-                    "address": {"type": "text",
-                               "description": "An address like 'Weinberstr. 29, 90607 Rückersdorf'"},
-                    "price": {"type": "number", 
-                             "description": "Price in EUR"},
-                    "property_type": {"type": "text", 
-                    "description": "Optional parameter. Building style as one of the classes 'Contemporary', 'Classic' or 'Futuristic'"},
-                    "image_url": {"type": "url",
-                                 "description": "Public URL to the image of the property"}
-                }}
-            ]
+          "$schema": "http://json-schema.org/schema#",
+          "type": "object",
+          "properties": {
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "house": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "the name of the house in English"
+                      },
+                      "address": {
+                        "type": "string",
+                        "description": "street name and number, zip code city name"
+                      },
+                      "price": {
+                        "type": "integer",
+                        "description": "520000"
+                      },
+                      "property_type": {
+                        "type": "string",
+                        "description": "one of the enum values 'a', 'b' or 'c'"
+                      },
+                      "image_url": {
+                        "type": "string",
+                        "description": "a public url of a image in png or jpg format. **must not** require authentication"
+                      }
+                    },
+                    "required": [
+                      "address",
+                      "image_url",
+                      "name",
+                      "price",
+                      "property_type"
+                    ]
+                  }
+                },
+                "required": [
+                  "house"
+                ]
+              }
+            }
+          },
+          "required": [
+            "results"
+          ]
         }
     }
 

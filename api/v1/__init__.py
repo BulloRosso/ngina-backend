@@ -14,6 +14,7 @@ from .team import router as team_router
 from .mockup_agents import router as mockup_agents_router
 from .vault import router as vault_router 
 from .tagging import router as tagging_router
+from .operations import router as operations_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(interviews_router)
@@ -30,3 +31,4 @@ router.include_router(team_router)
 router.include_router(mockup_agents_router)
 router.include_router(vault_router) 
 router.include_router(tagging_router)
+router.include_router(operations_router)
