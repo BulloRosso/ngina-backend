@@ -1,0 +1,12 @@
+{
+  "name": "${{workfow-name}}",
+
+  "nodes": [
+    ${{generated-nodes}}
+  ],
+
+  "connections": {
+  ${{generated-connections}}
+  },
+  "settings": {}
+}  

@@ -12,7 +12,7 @@
     },
     "sendBody": true,
     "specifyBody": "json",
-    "jsonBody": "=",
+    "jsonBody": ${{json-body}},
     "options": {}
   },
   "type": "n8n-nodes-base.httpRequest",

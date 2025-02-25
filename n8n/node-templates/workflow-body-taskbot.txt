@@ -8,7 +8,5 @@
   "connections": {
   ${{generated-connections}}
   },
-  tags: [
-  ${{generated-tags}}
-  ]
+  "settings": {}
 }  
