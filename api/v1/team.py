@@ -1,6 +1,6 @@
 # api/v1/team.py
 from fastapi import APIRouter, HTTPException, Body, Depends
-from typing import Optional
+from typing import  Optional, List, Dict, Any
 from models.team import Team, TeamCreate, TeamMember
 from pydantic import BaseModel, UUID4
 from supabase import create_client
@@ -15,6 +15,15 @@ router = APIRouter(prefix="/team", tags=["team"])
 class AddAgentRequest(BaseModel):
     agentId: str
 
+class AgentConnection(BaseModel):
+    agentId: str
+    title: Optional[str] = None
+    input: Optional[Any] = None
+    output: Optional[Any] = None
+
+class TeamConnectionsResponse(BaseModel):
+    team: List[AgentConnection] = []
+    
 class TeamService:
     def __init__(self):
         self.supabase = create_client(
@@ -22,6 +31,62 @@ class TeamService:
             supabase_key=os.getenv("SUPABASE_KEY")
         )
 
+    async def get_team_connections(self, owner_id: UUID4) -> TeamConnectionsResponse:
+        try:
+            # Get the user's team
+            team = await self.get_or_create_team(owner_id)
+
+            if not team.agents or not team.agents.members:
+                # Return empty team if no agents
+                return TeamConnectionsResponse(team=[])
+
+            connections = []
+
+            # Fetch details for each agent in the team
+            for member in team.agents.members:
+                try:
+                    # Query the agents table to get agent details directly as raw JSON
+                    agent_result = self.supabase.table("agents")\
+                        .select("*")\
+                        .eq("id", member.agentId)\
+                        .execute()
+
+                    if agent_result.data and len(agent_result.data) > 0:
+                        agent_data = agent_result.data[0]
+
+                        # Extract English title from the JSON
+                        title = None
+                        if agent_data.get("title") and isinstance(agent_data["title"], dict):
+                            title = agent_data["title"].get("en")
+
+                        # Create connection entry with raw JSON for input/output
+                        connection = AgentConnection(
+                            agentId=member.agentId,
+                            title=title,
+                            input=agent_data.get("input"),
+                            output=agent_data.get("output")
+                        )
+                        connections.append(connection)
+                        logging.info(f"Added agent connection for {member.agentId} with title: {title}")
+                    else:
+                        # Include the agent ID even if details aren't found
+                        connections.append(AgentConnection(agentId=member.agentId))
+                        logging.warning(f"Agent details not found for ID: {member.agentId}")
+
+                except Exception as e:
+                    logging.error(f"Error fetching agent {member.agentId}: {str(e)}")
+                    # Still include the agent ID in case of error
+                    connections.append(AgentConnection(agentId=member.agentId))
+
+            return TeamConnectionsResponse(team=connections)
+
+        except Exception as e:
+            logging.error(f"Error in get_team_connections: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get team connections: {str(e)}"
+            )
+           
     async def get_or_create_team(self, owner_id: UUID4) -> Team:
         try:
             # Convert UUID to string for the teams table query
@@ -160,3 +225,12 @@ async def remove_agent_from_team(
     """
     service = TeamService()
     return await service.remove_agent(current_user, agent_id)
+
+@router.get("/connections", response_model=TeamConnectionsResponse)
+async def get_team_connections_endpoint(current_user: UUID4 = Depends(get_current_user)):
+    """
+    Get the team connections for the authenticated user.
+    Returns a list of agents with their connection details.
+    """
+    service = TeamService()
+    return await service.get_team_connections(current_user)
