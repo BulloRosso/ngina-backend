@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from models.operation import Operation, OperationCreate, TeamStatus, AgentStatus
 from supabase import create_client
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import ValidationError, UUID4
 from dependencies.auth import get_current_user
 import os
@@ -83,7 +83,8 @@ class OperationService:
                         finished_at = datetime.fromisoformat(run["finished_at"].replace("Z", "+00:00"))
                         duration = int((finished_at - created_at).total_seconds())
                     else:
-                        duration = int((datetime.now() - created_at).total_seconds())
+                        # Fix: Use timezone-aware datetime.now()
+                        duration = int((datetime.now(timezone.utc) - created_at).total_seconds())
 
                     last_run = {
                         "startedAt": run["created_at"],

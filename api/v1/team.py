@@ -18,8 +18,7 @@ class AddAgentRequest(BaseModel):
 class AgentConnection(BaseModel):
     agentId: str
     title: Optional[str] = None
-    input: Optional[Any] = None
-    output: Optional[Any] = None
+    agent_endpoint: Optional[str] = None
 
 class TeamConnectionsResponse(BaseModel):
     team: List[AgentConnection] = []
@@ -45,9 +44,9 @@ class TeamService:
             # Fetch details for each agent in the team
             for member in team.agents.members:
                 try:
-                    # Query the agents table to get agent details directly as raw JSON
+                    # Query the agents table to get basic agent details without input/output schemas
                     agent_result = self.supabase.table("agents")\
-                        .select("*")\
+                        .select("id,title,agent_endpoint")\
                         .eq("id", member.agentId)\
                         .execute()
 
@@ -59,12 +58,12 @@ class TeamService:
                         if agent_data.get("title") and isinstance(agent_data["title"], dict):
                             title = agent_data["title"].get("en")
 
-                        # Create connection entry with raw JSON for input/output
+                        # Create connection entry WITHOUT input/output schemas
                         connection = AgentConnection(
                             agentId=member.agentId,
                             title=title,
-                            input=agent_data.get("input"),
-                            output=agent_data.get("output")
+                            agent_endpoint=agent_data.get("agent_endpoint")
+                            # Do NOT include input/output schemas here
                         )
                         connections.append(connection)
                         logging.info(f"Added agent connection for {member.agentId} with title: {title}")
@@ -86,7 +85,7 @@ class TeamService:
                 status_code=500,
                 detail=f"Failed to get team connections: {str(e)}"
             )
-           
+          
     async def get_or_create_team(self, owner_id: UUID4) -> Team:
         try:
             # Convert UUID to string for the teams table query
