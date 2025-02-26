@@ -57,6 +57,7 @@ class AgentUsage(BaseModel):
     total_credits: int
     run_count: int
     avg_credits_per_run: float
+    agent_title_en: Optional[str] = None
 
 class ReportResponse(BaseModel):
     user_id: UUID4
@@ -64,6 +65,7 @@ class ReportResponse(BaseModel):
     start_date: datetime
     end_date: datetime
     total_credits: int
+    credits_remaining: int
     agents: List[AgentUsage]
 
 class Transaction(BaseModel):
@@ -238,6 +240,10 @@ class AccountingService:
             else:
                 raise HTTPException(status_code=400, detail="Invalid interval. Must be 'day', 'month', or 'year'")
 
+            # Get current balance for credits_remaining
+            balance_response = await self.get_balance(user_id)
+            current_balance = balance_response.balance
+
             # Get transactions for the interval
             result = self.supabase.table("agent_transactions")\
                 .select("*")\
@@ -246,6 +252,27 @@ class AccountingService:
                 .gte("timestamp", start_date.isoformat())\
                 .lte("timestamp", end_date.isoformat())\
                 .execute()
+
+            # Fetch agent information to get titles
+            agent_ids = set()
+            for transaction in result.data:
+                if transaction["agent_id"]:
+                    agent_ids.add(transaction["agent_id"])
+
+            agent_titles = {}
+            if agent_ids:
+                # Fetch agent details from agents table
+                agents_result = self.supabase.table("agents")\
+                    .select("id,title")\
+                    .in_("id", list(agent_ids))\
+                    .execute()
+
+                for agent in agents_result.data:
+                    # Extract English title from the title JSON object
+                    if agent["title"] and isinstance(agent["title"], dict) and "en" in agent["title"]:
+                        agent_titles[agent["id"]] = agent["title"]["en"]
+                    else:
+                        agent_titles[agent["id"]] = f"Agent {agent['id'][:8]}"
 
             # Aggregate by agent_id
             agent_stats = {}
@@ -274,11 +301,15 @@ class AccountingService:
                 run_count = len(stats["runs"])
                 avg_credits = stats["total_credits"] / max(run_count, 1)  # Avoid division by zero
 
+                # Get agent title if available
+                agent_title = agent_titles.get(agent_id, f"Agent {agent_id[:8]}")
+
                 agents.append(AgentUsage(
                     agent_id=UUID4(agent_id),
                     total_credits=stats["total_credits"],
                     run_count=run_count,
-                    avg_credits_per_run=avg_credits
+                    avg_credits_per_run=avg_credits,
+                    agent_title_en=agent_title
                 ))
 
             return ReportResponse(
@@ -287,6 +318,7 @@ class AccountingService:
                 start_date=start_date,
                 end_date=end_date,
                 total_credits=total_credits,
+                credits_remaining=current_balance,
                 agents=agents
             )
         except HTTPException:
