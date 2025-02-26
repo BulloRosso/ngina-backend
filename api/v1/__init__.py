@@ -17,6 +17,7 @@ from .tagging import router as tagging_router
 from .operations import router as operations_router
 from .build import router as build_router
 from .accounting import router as accounting_router
+from .scratchpads import router as scratchpads_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(interviews_router)
@@ -36,3 +37,4 @@ router.include_router(tagging_router)
 router.include_router(operations_router)
 router.include_router(build_router)
 router.include_router(accounting_router)
+router.include_router(scratchpads_router)

@@ -20,6 +20,7 @@ class OperationService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
+
     async def get_team_status(self, user_id: UUID4) -> TeamStatus:
         try:
             logging.info("Starting get_team_status")
@@ -86,7 +87,9 @@ class OperationService:
                         # Fix: Use timezone-aware datetime.now()
                         duration = int((datetime.now(timezone.utc) - created_at).total_seconds())
 
+                    # Add run_id to the lastRun object
                     last_run = {
+                        "run_id": str(run["id"]),  # Add the run_id field
                         "startedAt": run["created_at"],
                         "finishedAt": run["finished_at"],
                         "duration": duration,
@@ -113,7 +116,6 @@ class OperationService:
                 status_code=500, 
                 detail=f"Failed to get team status: {str(e)}"
             )
-
     
     async def create_or_update_operation(self, operation_data: dict) -> Operation:
         try:
