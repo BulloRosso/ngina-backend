@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
+class SchemaGenerationRequest(BaseModel):
+    data: Any
+    
 def process_schema(data: Any) -> Any:
     """
     Process input/output data into a JSON schema.
@@ -518,3 +521,18 @@ async def test_agent(agent_id: str, test_data: AgentTestRequest):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/generate-json-schema", response_model=Dict[str, Any])
+async def generate_json_schema(request: SchemaGenerationRequest):
+    """
+    Generate a JSON schema from an example object.
+    Uses the process_schema method to generate a schema.
+    """
+    try:
+        schema = process_schema(request.data)
+        return schema
+    except Exception as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Failed to generate schema: {str(e)}"
+        )
