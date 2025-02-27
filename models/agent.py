@@ -19,7 +19,7 @@ class AgentBase(BaseModel):
     credits_per_run: Optional[int] = 0
     workflow_id: Optional[str] = None
     stars: Optional[int] = 0
-    authentication: Optional[str] = "none"
+    authentication: Optional[str] = None
     icon_svg: Optional[str] = None
     image_url: Optional[str] = None
     max_execution_time_secs: Optional[int] = None

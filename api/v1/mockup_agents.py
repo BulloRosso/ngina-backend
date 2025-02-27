@@ -1,15 +1,25 @@
 # api/v1/mockup_agents.py
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, HTTPException, Path, Request
 from pydantic import BaseModel
 from typing import Dict, Union, Any
 from datetime import datetime
 import json
 import asyncio
+import os
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mockup-agents", tags=["mockup-agents"])
+
+import uuid
+from supabase import create_client
+
+# Initialize Supabase client
+supabase = create_client(
+    supabase_url=os.getenv("SUPABASE_URL"),
+    supabase_key=os.getenv("SUPABASE_KEY")
+)
 
 class AgentMetadata(BaseModel):
     name: str
@@ -30,6 +40,46 @@ class AgentInvocation(BaseModel):
     input: Dict[str, Union[str, int, float, datetime, Dict]]
     callbackUrl: str
 
+async def validate_wrapper_agent(agent_id: str):
+    """
+    Validate that the agent exists, is a wrapper, and return the agent data.
+    """
+    try:
+        # Validate UUID format
+        uuid_obj = uuid.UUID(agent_id)
+
+        # Query Supabase for the agent
+        result = supabase.table("agents")\
+            .select("*")\
+            .eq("id", str(uuid_obj))\
+            .execute()
+
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+        agent = result.data[0]
+
+        # Check if this is a wrapper agent
+        if not agent.get("agent_endpoint") or "wrapper" not in agent.get("agent_endpoint"):
+            raise HTTPException(
+                status_code=400, 
+                detail="This agent is not a wrapper agent"
+            )
+
+        # Check if the wrapper has a workflow_id (target URL)
+        if not agent.get("workflow_id"):
+            raise HTTPException(
+                status_code=400,
+                detail="Wrapper agent doesn't have a target URL configured"
+            )
+
+        return agent
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    except Exception as e:
+        logger.error(f"Error validating wrapper agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate agent: {str(e)}")
+        
 def get_real_estate_metadata():
     return {
         "schemaName": "ngina-metadata.0.9",
@@ -450,3 +500,149 @@ async def get_web_page_scraper_metadata_endpoint():
 @router.post("/web-page-scraper")
 async def post_web_page_scraper_endpoint(request: Dict[str, Any]):
     return await get_web_page_scraper_response(request)
+
+@router.head("/wrapper/{agent_id}")
+async def head_wrapper_endpoint(agent_id: str = Path(...)):
+    """
+    HEAD request handler for wrapper agents.
+    Validates the agent exists and is a wrapper.
+    """
+    # Validate agent
+    await validate_wrapper_agent(agent_id)
+
+    # Return alive header
+    return Response(headers={"x-alive": "true"})
+
+@router.get("/wrapper/{agent_id}")
+async def get_wrapper_metadata_endpoint(agent_id: str = Path(...)):
+    """
+    GET request handler for wrapper agents.
+    Returns the agent metadata in the ngina-metadata.0.9 format.
+    """
+    # Validate and get agent data
+    agent = await validate_wrapper_agent(agent_id)
+
+    # Create the metadata response from the agent data
+    metadata_response = {
+        "schemaName": "ngina-metadata.0.9",
+        "metadata": {
+            "name": agent.get("id"),
+            "title": agent.get("title", {"en": "Wrapped Agent", "de": "Wrapped Agent"}),
+            "description": agent.get("description", {"en": "", "de": ""}),
+            "icon_svg": agent.get("icon_svg", ""),
+            "maxRuntimeSeconds": agent.get("max_execution_time_secs", 30)
+        },
+        "credentials": {},
+        "input": agent.get("input", {}),
+        "output": agent.get("output", {})
+    }
+
+    return metadata_response
+
+@router.post("/wrapper/{agent_id}")
+async def post_wrapper_endpoint(request: Request, agent_id: str = Path(...)):
+    """
+    POST request handler for wrapper agents.
+    Acts as a proxy to the target URL (workflow_id).
+    """
+    import httpx
+
+    # Validate and get agent data
+    agent = await validate_wrapper_agent(agent_id)
+
+    # Get the target URL from workflow_id
+    target_url = agent.get("workflow_id")
+
+    # Get request body
+    request_body = await request.json()
+
+    # Prepare headers based on authentication
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    # Handle authentication if configured
+    auth = agent.get("authentication", "none")
+    if auth != "none":
+        if auth.startswith("header:"):
+            # Custom header authentication
+            header_name = auth.replace("header:", "")
+            # Expect the header value to be in the credentials
+            if "credentials" in request_body and header_name in request_body["credentials"]:
+                headers[header_name] = request_body["credentials"][header_name]
+            else:
+                # For testing, we'll allow the request to proceed without the credential
+                logger.warning(f"Custom header {header_name} required but not provided")
+
+        elif auth.startswith("basic-auth:"):
+            # Basic authentication
+            auth_parts = auth.replace("basic-auth:", "").split(",")
+            if len(auth_parts) == 2:
+                username, password = auth_parts
+                # Create auth
+                import base64
+                auth_string = f"{username}:{password}"
+                auth_bytes = auth_string.encode('ascii')
+                base64_bytes = base64.b64encode(auth_bytes)
+                base64_auth = base64_bytes.decode('ascii')
+                headers["Authorization"] = f"Basic {base64_auth}"
+
+        elif auth == "bearer-token":
+            # Bearer token authentication
+            if "credentials" in request_body and "token" in request_body["credentials"]:
+                headers["Authorization"] = f"Bearer {request_body['credentials']['token']}"
+            else:
+                # For testing, we'll allow the request to proceed without the credential
+                logger.warning("Bearer token required but not provided")
+
+    try:
+        # Make the request to the target URL
+        logger.info(f"Proxying request to {target_url}")
+        logger.debug(f"Request body: {request_body}")
+
+        timeout = agent.get("max_execution_time_secs", 30)
+
+        async with httpx.AsyncClient() as client:
+            # Remove credentials from the request if any
+            if "credentials" in request_body:
+                del request_body["credentials"]
+
+            # Forward the request
+            response = await client.post(
+                target_url, 
+                json=request_body,
+                headers=headers,
+                timeout=float(timeout)
+            )
+
+            # Return the exact response from the target, regardless of status code
+            try:
+                # Try to parse as JSON first
+                return response.json()
+            except:
+                # If it's not JSON, return the text content
+                return Response(
+                    content=response.text,
+                    status_code=response.status_code,
+                    media_type=response.headers.get("content-type", "text/plain")
+                )
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Request to target agent timed out after {timeout} seconds"
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to communicate with target agent: {str(e)}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in wrapper proxy: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing request: {str(e)}"
+        )
