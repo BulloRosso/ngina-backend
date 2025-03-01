@@ -740,11 +740,39 @@ async def get_human_feedback(hitl_id: UUID4):
     
 @router.post("/human-feedback/{hitl_id}/update")
 async def update_human_feedback(
+    request: Request,
     hitl_id: UUID4,
-    status: HumanFeedbackStatus,
-    feedback: Optional[str] = None,
     current_user: UUID4 = Depends(get_current_user)
 ):
     """Update the status of a human-in-the-loop request"""
-    service = OperationService()
-    return await service.update_human_feedback(hitl_id, status, feedback)
+    try:
+        # Parse the request body
+        body_data = await request.json()
+        logging.info(f"Received update request body: {body_data}")
+
+        status_str = body_data.get("status")
+        reason = body_data.get("reason")
+
+        # Map the status string to enum value
+        status_mapping = {
+            "approved": HumanFeedbackStatus.APPROVED,
+            "rejected": HumanFeedbackStatus.REJECTED
+        }
+
+        status = status_mapping.get(status_str)
+        if not status:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid status: {status_str}. Must be one of: approved, rejected"
+            )
+
+        service = OperationService()
+        return await service.update_human_feedback(hitl_id, status, reason)
+    except Exception as e:
+        logging.error(f"Error updating human feedback: {str(e)}", exc_info=True)
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
