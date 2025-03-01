@@ -534,7 +534,7 @@ class OperationService:
                 detail=f"Failed to request human feedback: {str(e)}"
             )
             
-    async def update_human_feedback(self, hitl_id: UUID4, status: HumanFeedbackStatus, feedback: Optional[str] = None) -> HumanInTheLoop:
+    async def update_human_feedback(self, hitl_id: UUID4, status: HumanFeedbackStatus, reason: Optional[str] = None) -> HumanInTheLoop:
         """Update the status of a human-in-the-loop request and trigger the callback if needed"""
         try:
             # Get the HITL record
@@ -554,8 +554,8 @@ class OperationService:
             }
 
             # Add feedback as reason if provided
-            if feedback:
-                update_data["reason"] = feedback
+            if reason:
+                update_data["reason"] = reason
 
             update_result = self.supabase.table("human_in_the_loop")\
                 .update(update_data)\
@@ -567,19 +567,33 @@ class OperationService:
 
             updated_record = update_result.data[0]
 
-            # If there's a callback URL, send the result to continue the workflow
-            callback_url = hitl_record.get("callback_url")
-            if callback_url:
+            # If there's a callback URL and status is APPROVED, send the result to continue the workflow
+            original_callback_url = hitl_record.get("callback_url")
+            if original_callback_url and status == HumanFeedbackStatus.APPROVED:
                 try:
+                    # Replace protocol, host, and port with N8N_URL environment variable
+                    n8n_base_url = os.getenv("N8N_URL")
+
+                    if not n8n_base_url:
+                        logging.warning("N8N_URL environment variable not set, using original callback URL")
+                        callback_url = original_callback_url
+                    else:
+                        # Parse the original URL to get the path
+                        from urllib.parse import urlparse, urljoin
+                        parsed_url = urlparse(original_callback_url)
+                        path = parsed_url.path
+
+                        # Join the N8N base URL with the path
+                        callback_url = urljoin(n8n_base_url, path)
+                        logging.info(f"Replaced callback URL: {original_callback_url} -> {callback_url}")
+
                     async with httpx.AsyncClient() as client:
-                        # Prepare the callback payload
+                        # Prepare the callback payload with approvalMessage
                         payload = {
-                            "hitl_id": str(hitl_id),
-                            "status": status.value,
-                            "feedback": feedback,
-                            "workflow_id": hitl_record.get("workflow_id"),
-                            "run_id": str(hitl_record.get("run_id"))
+                            "approvalMessage": reason or ""
                         }
+
+                        logging.info(f"Sending callback to n8n at {callback_url}")
 
                         # Call the callback URL
                         response = await client.post(
@@ -588,13 +602,15 @@ class OperationService:
                             timeout=10.0  # 10 second timeout
                         )
 
-                        if response.status_code < 200 or response.status_code >= 300:
+                        if response.status_code >= 200 and response.status_code < 300:
+                            logging.info(f"Continuing workflow in n8n (POST to wait webhook was successful)")
+                        else:
+                            logging.info(f"Continuing workflow in n8n (POST to wait webhook failed with status {response.status_code})")
                             logging.warning(f"Callback to {callback_url} returned status {response.status_code}")
-
-                        logging.info(f"Successfully sent callback for HITL ID: {hitl_id} with status: {status.value}")
 
                 except Exception as e:
                     # Log the error but don't fail the request
+                    logging.info(f"Continuing workflow in n8n (POST to wait webhook failed: {str(e)})")
                     logging.error(f"Error sending callback for HITL ID {hitl_id}: {str(e)}")
 
             return HumanInTheLoop.model_validate(updated_record)
@@ -605,7 +621,7 @@ class OperationService:
                 status_code=500,
                 detail=f"Failed to update human feedback: {str(e)}"
             )
-
+    
     async def get_human_feedback(self, hitl_id: UUID4) -> HumanInTheLoop:
         """Get details of a human-in-the-loop request"""
         try:
@@ -741,8 +757,7 @@ async def get_human_feedback(hitl_id: UUID4):
 @router.post("/human-feedback/{hitl_id}/update")
 async def update_human_feedback(
     request: Request,
-    hitl_id: UUID4,
-    current_user: UUID4 = Depends(get_current_user)
+    hitl_id: UUID4
 ):
     """Update the status of a human-in-the-loop request"""
     try:
@@ -766,8 +781,16 @@ async def update_human_feedback(
                 detail=f"Invalid status: {status_str}. Must be one of: approved, rejected"
             )
 
+        # Log the intent to update the feedback
+        logging.info(f"Updating human feedback ID {hitl_id} with status {status.value} and reason: {reason}")
+
         service = OperationService()
-        return await service.update_human_feedback(hitl_id, status, reason)
+        result = await service.update_human_feedback(hitl_id, status, reason)
+
+        # Log successful update
+        logging.info(f"Successfully updated human feedback ID {hitl_id}")
+
+        return result
     except Exception as e:
         logging.error(f"Error updating human feedback: {str(e)}", exc_info=True)
         if isinstance(e, HTTPException):
