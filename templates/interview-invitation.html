@@ -3,16 +3,22 @@
 <div class="content">
     <p>{{ t('common.greeting') }}</p>
 
-    <p>{{ t('invitation_message', profile_name=profile_name) }}</p>
+    <p>{{ t('invitation_message', recipient_name=recipient_name) }}</p>
 
-    <p>{{ t('start_message') }}</p>
+    <p>{{ t('review_instruction') }}</p>
+
+    {% if reason %}
+    <div class="reason-box">
+        <strong>{{ t('reason_label') }}:</strong> {{ reason }}
+    </div>
+    {% endif %}
 
     <center>
         <a rel="noopener" target="_blank" href="{{ interview_url }}" style="background-color: gold; font-size: 18px; font-family: Helvetica, Arial, sans-serif; font-weight: bold; text-decoration: none; padding: 14px 20px; color: #000000; border-radius: 5px; display: inline-block; mso-padding-alt: 0;">
             <!--[if mso]>
             <i style="letter-spacing: 25px; mso-font-width: -100%; mso-text-raise: 30pt;">&nbsp;</i>
             <![endif]-->
-            <span style="mso-text-raise: 15pt;">{{ t('start_button') }}</span>
+            <span style="mso-text-raise: 15pt;">{{ t('review_button') }}</span>
             <!--[if mso]>
             <i style="letter-spacing: 25px; mso-font-width: -100%;">&nbsp;</i>
             <![endif]-->
@@ -20,15 +26,15 @@
     </center>
 
     <div class="expiry-note">
-        <strong>{{ t('note_label') }}:</strong> {{ t('expiry_notice', expiry_date=expiry_date) }}
+        <strong>{{ t('note_label') }}:</strong> {{ t('expiry_notice') }}
     </div>
 
-    <p>{{ t('what_to_expect') }}</p>
+    <p>{{ t('review_expectations') }}</p>
     <ul>
-        <li>{{ t('expectation_1') }}</li>
-        <li>{{ t('expectation_2') }}</li>
-        <li>{{ t('expectation_3') }}</li>
-        <li>{{ t('expectation_4') }}</li>
+        <li>{{ t('expectation_review') }}</li>
+        <li>{{ t('expectation_feedback') }}</li>
+        <li>{{ t('expectation_decision') }}</li>
+        <li>{{ t('expectation_continue') }}</li>
     </ul>
 
     <p>{{ t('questions_note') }}</p>

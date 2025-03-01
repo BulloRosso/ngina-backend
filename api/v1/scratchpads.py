@@ -11,6 +11,8 @@ from models.scratchpad import ScratchpadFile, ScratchpadFiles, ScratchpadFileRes
 from supabase import create_client, Client
 import httpx
 import json
+import re
+from urllib.parse import urlparse, parse_qs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scratchpads", tags=["scratchpads"])
@@ -34,6 +36,41 @@ async def get_api_key(x_ngina_key: Optional[str] = Header(None)) -> str:
         )
     return x_ngina_key
 
+def is_url_expired(url: str, threshold_minutes: int = 5) -> bool:
+    """
+    Check if a Supabase Storage URL's SAS token is expired or about to expire
+
+    Args:
+        url: The signed URL to check
+        threshold_minutes: Number of minutes before expiration to consider a URL as "expired"
+
+    Returns:
+        bool: True if the URL is expired or will expire soon, False otherwise
+    """
+    try:
+        # Parse the URL
+        parsed_url = urlparse(url)
+        query_params = parse_qs(parsed_url.query)
+
+        # Extract the expiry parameter (usually 'se' in SAS tokens)
+        if 'se' not in query_params:
+            return True  # No expiry parameter found, consider expired
+
+        # Parse the expiry timestamp
+        expiry_timestamp = int(query_params['se'][0])
+        expiry_time = datetime.fromtimestamp(expiry_timestamp)
+
+        # Calculate the threshold time
+        current_time = datetime.now()
+        threshold_time = current_time + timedelta(minutes=threshold_minutes)
+
+        # Check if the URL will expire within the threshold
+        return expiry_time <= threshold_time
+
+    except Exception as e:
+        logger.error(f"Error checking URL expiration: {str(e)}")
+        return True  # Consider expired on error
+
 class ScratchpadService:
     def __init__(self):
         self.supabase = get_supabase_client()
@@ -56,12 +93,55 @@ class ScratchpadService:
             files_by_agent = {}
             for file_data in result.data:
                 agent_id = UUID(file_data.get("agent_id"))
-                scratchpad_file = ScratchpadFile.model_validate(file_data)
 
-                if agent_id not in files_by_agent:
-                    files_by_agent[agent_id] = []
+                # Get the file path for creating a fresh signed URL
+                file_path = file_data.get("path")
 
-                files_by_agent[agent_id].append(scratchpad_file)
+                # Check if the URL is expired or will expire soon
+                current_url = file_data.get("metadata", {}).get("url", "")
+                fresh_url = current_url
+
+                # Refresh the URL if needed
+                try:
+                    if is_url_expired(current_url):
+                        # Create a new signed URL (valid for 1 hour)
+                        signed_url_result = self.supabase.storage\
+                            .from_(self.bucket_name)\
+                            .create_signed_url(file_path, 3600)
+
+                        if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
+                            fresh_url = signed_url_result["signedURL"]
+                        else:
+                            fresh_url = str(signed_url_result)
+
+                        # Update the URL in the metadata
+                        metadata = file_data.get("metadata", {})
+                        metadata["url"] = fresh_url
+                        file_data["metadata"] = metadata
+
+                    # Create the ScratchpadFile with the updated metadata
+                    scratchpad_file = ScratchpadFile.model_validate(file_data)
+
+                    if agent_id not in files_by_agent:
+                        files_by_agent[agent_id] = []
+
+                    files_by_agent[agent_id].append(scratchpad_file)
+
+                except Exception as file_error:
+                    # Log the error but continue processing other files
+                    logger.warning(f"Error refreshing URL for file {file_path}: {str(file_error)}")
+                    # Skip this file and continue with others
+                    # Optionally, you could add the file with the original URL instead
+
+                    # If you want to include the file with its original URL (might still be broken):
+                    try:
+                        scratchpad_file = ScratchpadFile.model_validate(file_data)
+                        if agent_id not in files_by_agent:
+                            files_by_agent[agent_id] = []
+                        files_by_agent[agent_id].append(scratchpad_file)
+                    except Exception:
+                        # If even that fails, just skip this file entirely
+                        pass
 
             return ScratchpadFiles(files=files_by_agent)
 
@@ -71,7 +151,6 @@ class ScratchpadService:
                 status_code=500,
                 detail=f"Failed to retrieve scratchpad files: {str(e)}"
             )
-
     async def upload_files(self, user_id: UUID, run_id: UUID, agent_id: UUID, files: List[UploadFile]) -> List[ScratchpadFile]:
         uploaded_files = []
 
@@ -297,35 +376,29 @@ class ScratchpadService:
             file_data = result.data[0]
             metadata = ScratchpadFileMetadata.model_validate(file_data["metadata"])
 
-            # Check if the URL is still valid (not expired)
-            if "signedURL" in metadata.url:
-                # Generate a new signed URL if needed
-                signed_url_result = self.supabase.storage\
-                    .from_(self.bucket_name)\
-                    .create_signed_url(file_data["path"], 3600)
+            # Always generate a new signed URL to ensure it's fresh
+            # Generate a new signed URL (valid for 1 hour)
+            signed_url_result = self.supabase.storage\
+                .from_(self.bucket_name)\
+                .create_signed_url(file_data["path"], 3600)
 
-                if "error" in signed_url_result:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Failed to create signed URL: {signed_url_result['error']}"
-                    )
+            if isinstance(signed_url_result, dict) and "error" in signed_url_result:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to create signed URL: {signed_url_result['error']}"
+                )
 
+            if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
                 url = signed_url_result["signedURL"]
+            else:
+                url = str(signed_url_result)
 
-                # Update the metadata with the new URL
-                updated_metadata = metadata.model_dump()
-                updated_metadata["url"] = url
-
-                self.supabase.table("scratchpad_files")\
-                    .update({"metadata": updated_metadata})\
-                    .eq("id", file_data["id"])\
-                    .execute()
-
-                metadata.url = url
+            # Update the metadata with the new URL (but don't store back to DB)
+            metadata.url = url
 
             return ScratchpadFileResponse(
                 metadata=metadata,
-                url=metadata.url
+                url=url
             )
 
         except HTTPException:
@@ -468,26 +541,26 @@ class ScratchpadService:
                 detail=f"Failed to upload system JSON: {str(e)}"
             )
 
-    # Helper function to convert JSON to files
-    async def handle_json_as_files(data: Dict[str, Any]) -> List[UploadFile]:
-        """Convert JSON data to a file for upload"""
-        import json
-        from fastapi import UploadFile
-        from io import BytesIO
+# Helper function to convert JSON to files
+async def handle_json_as_files(data: Dict[str, Any]) -> List[UploadFile]:
+    """Convert JSON data to a file for upload"""
+    import json
+    from fastapi import UploadFile
+    from io import BytesIO
 
-        # This is a simplistic implementation
-        # You may need to adapt it based on your UploadFile handling
-        json_str = json.dumps(data)
-        file_content = BytesIO(json_str.encode())
+    # This is a simplistic implementation
+    # You may need to adapt it based on your UploadFile handling
+    json_str = json.dumps(data)
+    file_content = BytesIO(json_str.encode())
 
-        # Create an UploadFile object
-        upload_file = UploadFile(
-            filename="data.json",
-            file=file_content,
-            content_type="application/json"
-        )
+    # Create an UploadFile object
+    upload_file = UploadFile(
+        filename="data.json",
+        file=file_content,
+        content_type="application/json"
+    )
 
-        return [upload_file]
+    return [upload_file]
 
 # Endpoint routes
 @router.get("/{run_id}", response_model=ScratchpadFiles)

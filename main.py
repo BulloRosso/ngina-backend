@@ -13,11 +13,15 @@ frontend_url = os.environ['FRONTEND_URL']
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", frontend_url,
-                "https://ngina.replit.app"],
+    allow_origins=[
+        "http://localhost:5173", 
+        frontend_url,
+        "https://*.replit.dev",
+        "https://ngina.replit.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Configure logging

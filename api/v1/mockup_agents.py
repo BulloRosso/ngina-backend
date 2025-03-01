@@ -168,7 +168,7 @@ async def get_real_estate_response():
                 "address": "In the middle of the street 3, 8121 Ulbucerque",
                 "price": 520000,
                 "property_type": "Classic",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/3/36/Durkin_Boarding_House_Park_City_Utah.jpeg"
+                "image_xrl": "https://upload.wikimedia.org/wikipedia/commons/3/36/Durkin_Boarding_House_Park_City_Utah.jpeg"
              }
             },
             { "house": {
@@ -176,7 +176,7 @@ async def get_real_estate_response():
                 "address": "In the center of the street 3, 8121 Belgere",
                 "price": 1000500,
                 "property_type": "Contemporary",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Belgique_-_Rixensart_-_Villa_les_Hussards_-_01.jpg/1920px-Belgique_-_Rixensart_-_Villa_les_Hussards_-_01.jpg"
+                "image_xrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Belgique_-_Rixensart_-_Villa_les_Hussards_-_01.jpg/1920px-Belgique_-_Rixensart_-_Villa_les_Hussards_-_01.jpg"
               }
             },
             { "house": {
@@ -184,7 +184,7 @@ async def get_real_estate_response():
                 "address": "On the crest 4, 8121 Brno",
                 "price": 370000,
                 "property_type": "Contemporary",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Vila_Tugendhat_Brno_2016_5.jpg/1920px-Vila_Tugendhat_Brno_2016_5.jpg"
+                "image_xrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/Vila_Tugendhat_Brno_2016_5.jpg/1920px-Vila_Tugendhat_Brno_2016_5.jpg"
               }
             },
             { "house": {
@@ -192,7 +192,7 @@ async def get_real_estate_response():
                 "address": "In the middle of nowhere, 8121 Wanli",
                 "price": 87700,
                 "property_type": "Futuristic",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Futuro_Village%2C_Wanli_10.jpg/1920px-Futuro_Village%2C_Wanli_10.jpg"
+                "image_xrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Futuro_Village%2C_Wanli_10.jpg/1920px-Futuro_Village%2C_Wanli_10.jpg"
               }
             }
         ]

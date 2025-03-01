@@ -10,6 +10,8 @@ from dependencies.auth import get_current_user
 import os
 import httpx
 import json
+from models.human_in_the_loop import HumanInTheLoop, HumanInTheLoopCreate, HumanFeedbackStatus, EmailSettings
+from services.email import EmailService
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +399,233 @@ class OperationService:
                 status_code=500,
                 detail=f"Failed to process workflow results: {str(e)}"
             )
-                
+
+    async def request_human_feedback(self, run_id: str, agent_id: str, data: Dict[str, Any]) -> HumanInTheLoop:
+        """Create a human-in-the-loop request and send notification email"""
+        try:
+            # Get run record from the supabase table
+            logging.info(f"Looking up agent_run with ID: {run_id}")
+            result = self.supabase.table("agent_runs")\
+                .select("*")\
+                .eq("id", run_id)\
+                .execute()
+
+            if not result.data:
+                logging.warning(f"No agent_run found with ID: {run_id}")
+                raise HTTPException(status_code=404, detail="Run not found")
+
+            logging.info(f"Found agent_run: {result.data[0].get('id')}")
+            run_data = result.data[0]
+
+            # Extract necessary fields from request data
+            workflow_id = data.get("workflow_id", "unknown")
+            callback_url = data.get("callback_url", "")
+            reason = data.get("reason")
+
+            # Initialize email_settings
+            email_settings_data = None
+            email_settings_obj = None
+
+            # Try to get email_settings from request or agent_run
+            if "email_settings" in data and data["email_settings"]:
+                email_settings_data = data["email_settings"]
+                # Convert to proper format
+                try:
+                    # Import locally to avoid scope issues
+                    from models.human_in_the_loop import EmailSettings
+                    email_settings_obj = EmailSettings(**email_settings_data)
+                except Exception as e:
+                    logging.warning(f"Could not parse email_settings from request: {str(e)}")
+            elif run_data.get("email_settings"):
+                email_settings_data = run_data.get("email_settings")
+                try:
+                    # Import locally to avoid scope issues
+                    from models.human_in_the_loop import EmailSettings
+                    email_settings_obj = EmailSettings(**email_settings_data)
+                except Exception as e:
+                    logging.warning(f"Could not parse email_settings from agent_run: {str(e)}")
+
+            # Insert into human_in_the_loop table
+            hitl_data = {
+                "run_id": run_id,
+                "email_settings": email_settings_data,
+                "status": HumanFeedbackStatus.PENDING.value,
+                "workflow_id": workflow_id,
+                "reason": reason,
+                "callback_url": callback_url
+            }
+
+            hitl_result = self.supabase.table("human_in_the_loop")\
+                .insert(hitl_data)\
+                .execute()
+
+            if not hitl_result.data:
+                raise HTTPException(status_code=500, detail="Failed to create human-in-the-loop request")
+
+            hitl_record = hitl_result.data[0]
+            hitl_id = hitl_record["id"]
+
+            # Send email notification if email_settings are available
+            if email_settings_data:
+                logging.info(f"Found email_settings: {email_settings_data}")
+                try:
+                    # Manual extraction of email data if parsing to EmailSettings object failed
+                    if not email_settings_obj:
+                        # Try to manually extract recipient information
+                        recipients = []
+                        subject = "Review Request"
+
+                        if isinstance(email_settings_data, dict):
+                            subject = email_settings_data.get("subject", "Review Request")
+                            raw_recipients = email_settings_data.get("recipients", [])
+
+                            if isinstance(raw_recipients, list):
+                                for recipient in raw_recipients:
+                                    if isinstance(recipient, dict) and "email" in recipient:
+                                        recipients.append({
+                                            "email": recipient["email"],
+                                            "name": recipient.get("name", recipient["email"])
+                                        })
+
+                        if recipients:
+                            logging.info(f"Manually extracted {len(recipients)} recipients from email_settings")
+                        else:
+                            logging.warning("Could not extract any recipients from email_settings")
+                            return HumanInTheLoop.model_validate(hitl_record)
+                    else:
+                        # Use the parsed object
+                        subject = email_settings_obj.subject
+                        recipients = [{"email": r.email, "name": r.name or r.email} for r in email_settings_obj.recipients]
+
+                    # Send emails
+                    email_service = EmailService()
+                    frontend_url = os.getenv("FRONTEND_URL")
+                    review_url = f"{frontend_url}/human-in-the-loop/{hitl_id}"
+
+                    for recipient in recipients:
+                        try:
+                            await email_service.send_email(
+                                template_name="interview-invitation",
+                                to_email=recipient["email"],
+                                subject_key="interview_invitation.subject",
+                                locale="en",  # Default to English
+                                interview_url=review_url,
+                                recipient_name=recipient["name"] or recipient["email"],
+                                reason=reason or "Workflow requires your review"
+                            )
+
+                            logging.info(f"Sent review request email to {recipient['email']} for HITL ID: {hitl_id}")
+                        except Exception as e:
+                            logging.error(f"Error sending email to {recipient['email']}: {str(e)}", exc_info=True)
+
+                except Exception as e:
+                    # Log the error but don't fail the request if email sending fails
+                    logging.error(f"Error in email sending process: {str(e)}", exc_info=True)
+            else:
+                logging.info(f"No email_settings data for HITL ID: {hitl_id}, skipping email notification")
+
+            # Return the created record
+            return HumanInTheLoop.model_validate(hitl_record)
+
+        except Exception as e:
+            logging.error(f"Error requesting human feedback: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to request human feedback: {str(e)}"
+            )
+            
+    async def update_human_feedback(self, hitl_id: UUID4, status: HumanFeedbackStatus, feedback: Optional[str] = None) -> HumanInTheLoop:
+        """Update the status of a human-in-the-loop request and trigger the callback if needed"""
+        try:
+            # Get the HITL record
+            result = self.supabase.table("human_in_the_loop")\
+                .select("*")\
+                .eq("id", str(hitl_id))\
+                .execute()
+
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Human-in-the-loop request not found")
+
+            hitl_record = result.data[0]
+
+            # Update the status
+            update_data = {
+                "status": status.value
+            }
+
+            # Add feedback as reason if provided
+            if feedback:
+                update_data["reason"] = feedback
+
+            update_result = self.supabase.table("human_in_the_loop")\
+                .update(update_data)\
+                .eq("id", str(hitl_id))\
+                .execute()
+
+            if not update_result.data:
+                raise HTTPException(status_code=500, detail="Failed to update human-in-the-loop request")
+
+            updated_record = update_result.data[0]
+
+            # If there's a callback URL, send the result to continue the workflow
+            callback_url = hitl_record.get("callback_url")
+            if callback_url:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        # Prepare the callback payload
+                        payload = {
+                            "hitl_id": str(hitl_id),
+                            "status": status.value,
+                            "feedback": feedback,
+                            "workflow_id": hitl_record.get("workflow_id"),
+                            "run_id": str(hitl_record.get("run_id"))
+                        }
+
+                        # Call the callback URL
+                        response = await client.post(
+                            callback_url,
+                            json=payload,
+                            timeout=10.0  # 10 second timeout
+                        )
+
+                        if response.status_code < 200 or response.status_code >= 300:
+                            logging.warning(f"Callback to {callback_url} returned status {response.status_code}")
+
+                        logging.info(f"Successfully sent callback for HITL ID: {hitl_id} with status: {status.value}")
+
+                except Exception as e:
+                    # Log the error but don't fail the request
+                    logging.error(f"Error sending callback for HITL ID {hitl_id}: {str(e)}")
+
+            return HumanInTheLoop.model_validate(updated_record)
+
+        except Exception as e:
+            logging.error(f"Error updating human feedback: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update human feedback: {str(e)}"
+            )
+
+    async def get_human_feedback(self, hitl_id: UUID4) -> HumanInTheLoop:
+        """Get details of a human-in-the-loop request"""
+        try:
+            result = self.supabase.table("human_in_the_loop")\
+                .select("*")\
+                .eq("id", str(hitl_id))\
+                .execute()
+
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Human-in-the-loop request not found")
+
+            return HumanInTheLoop.model_validate(result.data[0])
+
+        except Exception as e:
+            logging.error(f"Error getting human feedback: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get human feedback: {str(e)}"
+            )
+
 @router.post("/run", response_model=Operation)
 async def create_or_update_operation(operation_data: dict):
     service = OperationService()
@@ -423,7 +651,6 @@ async def get_team_status(current_user: UUID4 = Depends(get_current_user)):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
-# New endpoints
 @router.get("/workflow/{run_id}/env")
 async def get_workflow_env(run_id: str):
     """Get workflow environment for a specific run_id"""
@@ -459,3 +686,65 @@ async def process_workflow_results(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
+@router.post("/workflow/{run_id}/request-human-feedback/{agent_id}")
+async def request_human_feedback(
+    request: Request,
+    run_id: str,
+    agent_id: str,
+    x_ngina_key: Optional[str] = Header(None)
+):
+    """Request human feedback for a workflow and send notification email"""
+    try:
+        service = OperationService()
+
+        # Check API key authorization
+        if x_ngina_key != service.ngina_workflow_key:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid API key"
+            )
+
+        # Get the JSON data (could be raw or parsed depending on request)
+        try:
+            # First try to get JSON directly
+            request_data = await request.json()
+        except json.JSONDecodeError:
+            # If that fails, try to parse the body as form data
+            form_data = await request.form()
+            request_data = dict(form_data)
+
+        # Handle nested body structure if present
+        if isinstance(request_data, dict) and "body" in request_data and isinstance(request_data["body"], dict):
+            request_data = request_data["body"]
+
+        logging.info(f"Processed request data: {request_data}")
+
+        # Pass the raw data dict directly to the service method
+        # We'll handle the validation and extraction there
+        return await service.request_human_feedback(run_id, agent_id, request_data)
+    except Exception as e:
+        logging.error(f"Error in request_human_feedback endpoint: {str(e)}", exc_info=True)
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@router.get("/human-feedback/{hitl_id}")
+async def get_human_feedback(hitl_id: UUID4):
+    """Get details of a human-in-the-loop request"""
+    service = OperationService()
+    return await service.get_human_feedback(hitl_id)
+    
+@router.post("/human-feedback/{hitl_id}/update")
+async def update_human_feedback(
+    hitl_id: UUID4,
+    status: HumanFeedbackStatus,
+    feedback: Optional[str] = None,
+    current_user: UUID4 = Depends(get_current_user)
+):
+    """Update the status of a human-in-the-loop request"""
+    service = OperationService()
+    return await service.update_human_feedback(hitl_id, status, feedback)
