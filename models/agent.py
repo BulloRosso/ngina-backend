@@ -24,6 +24,8 @@ class AgentBase(BaseModel):
     image_url: Optional[str] = None
     max_execution_time_secs: Optional[int] = None
     agent_endpoint: Optional[str] = None
+    type: Optional[str] = "atom"
+    configuration: Optional[Any] = None
 
 class AgentCreate(AgentBase):
     pass

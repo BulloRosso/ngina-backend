@@ -213,8 +213,14 @@ async def resend_confirmation(request: EmailRequest):
         }
 
 @router.post("/refresh")
-async def refresh_token(request: RefreshTokenRequest):
+async def refresh_token(request: Request, response: FastAPIResponse):
     try:
+        # Get refresh token from HTTP-only cookie
+        refresh_token = request.cookies.get("refresh_token")
+
+        if not refresh_token:
+            raise HTTPException(status_code=401, detail="No refresh token provided")
+
         supabase_client = create_client(
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
@@ -222,15 +228,24 @@ async def refresh_token(request: RefreshTokenRequest):
 
         # Refresh the session
         refresh_response = supabase_client.auth.refresh_session({
-            "refresh_token": request.refresh_token
+            "refresh_token": refresh_token
         })
 
         if not refresh_response.session:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
 
+        # Update the refresh token cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_response.session.refresh_token,
+            httponly=True,
+            secure=True,
+            samesite='lax',
+            max_age=3600 * 24 * 30  # 30 days
+        )
+
         return {
             "access_token": refresh_response.session.access_token,
-            "refresh_token": refresh_response.session.refresh_token,
             "token_type": "bearer"
         }
     except Exception as e:
