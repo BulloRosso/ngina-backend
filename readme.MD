@@ -3,7 +3,7 @@ This is the nginA API backend based on
 * Python
 * FastAPI/Pydantic
 
-![Splash screen](/doc/splash-screen.jpg)
+![Splash screen](/docs/splash-screen.jpg)
 
 More about the origins of ngina: [background story on LinkedIn](https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf)
 
@@ -12,7 +12,7 @@ nginA is a wrapper around n8n to execute agentic workflows. It was
 written to enable self-hosted workflows which are compliant to
 EU regulations (e. g. hostend on EU servers).
 
-![High level overview](/doc/high-level-overview.jpg)
+![High level overview](/docs/high-level-overview.jpg)
 
 All data is stored in a Supabase instance:
 * nginA objects
@@ -40,7 +40,7 @@ Recommended for trials and MVPs.
 Subscribe to a Supabase managed service and create your PostgresInstance on an EU server.
 
 Install the 
-* [nginA secrets management schema](docs/secrets-managwment.MD)
+* [nginA secrets management schema](docs/secrets-management.MD)
 * [nginA tagging subsystem](docs/tagging-subsystem.MD)
 
  
@@ -48,7 +48,7 @@ Install the
 Subscribe to render.com and pull the latest n8n Docker image.
 Set the environment variables to point to the Supabase instance:
 
-![Docker environment variables](/doc/render-com-params-n8n-anonymous.jpg)
+![Docker environment variables](/docs/render-com-params-n8n-anonymous.jpg)
 
 Make sure you use the pooled connection settings from the Supabase connection list!
 
