@@ -40,7 +40,7 @@ Recommended for trials and MVPs.
 Subscribe to a Supabase managed service and create your PostgresInstance on an EU server.
 
 Install the 
-* [nginA secrets management schema](docs/secrets-managment.MD)
+* [nginA secrets management schema](docs/secrets-managwment.MD)
 * [nginA tagging subsystem](docs/tagging-subsystem.MD)
 
  
