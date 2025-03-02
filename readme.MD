@@ -5,7 +5,7 @@ This is the nginA API backend based on
 
 ![Splash screen](/doc/splash-screen.jpg)
 
-More about the origins of ngina: https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf
+More about the origins of ngina: [background story on LinkedIn](https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf)
 
 ## Why was nginA invented?
 nginA is a wrapper around n8n to execute agentic workflows. It was
@@ -33,10 +33,17 @@ extension. nginA provides API methods for credential management - these
 are built upon the Supabase functionality
 
 ## Setup
+
 ### Fast Lane Setup
 Recommended for trials and MVPs. 
 #### Database
 Subscribe to a Supabase managed service and create your PostgresInstance on an EU server.
+
+Install the 
+* [nginA secrets management schema](docs/secrets-managment)
+* [nginA tagging subsystem](docs/tagging-subsystem)
+
+ 
 #### n8n
 Subscribe to render.com and pull the latest n8n Docker image.
 Set the environment variables to point to the Supabase instance:
