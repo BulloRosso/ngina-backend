@@ -20,8 +20,8 @@ All data is stored in a Supabase instance:
 * Langchain memory
 * ...
 
-This setup simplifies backup/restore, because it automaticall keeps
-the relation between n8n workflows and nginA workflow pointers in sync.
+This setup simplifies backup/restore, because it automatically keeps
+the relations between n8n workflows and nginA workflow pointers in sync.
 
 ### Authentication
 Supabase provides the authentication subsystem which is extended by
@@ -40,8 +40,8 @@ Recommended for trials and MVPs.
 Subscribe to a Supabase managed service and create your PostgresInstance on an EU server.
 
 Install the 
-* [nginA secrets management schema](docs/secrets-managment)
-* [nginA tagging subsystem](docs/tagging-subsystem)
+* [nginA secrets management schema](docs/secrets-managment.MD)
+* [nginA tagging subsystem](docs/tagging-subsystem.MD)
 
  
 #### n8n
