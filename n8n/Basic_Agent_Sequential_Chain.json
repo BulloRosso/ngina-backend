@@ -1,0 +1,317 @@
+{
+  "name": "Basic Agent Sequential Chain",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        860,
+        -180
+      ],
+      "id": "ac462095-9007-41fd-8287-3320a075055c",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/results/{{ $('run-description').item.json.body.agents.first().id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $input.first().json }}",
+        "options": {
+          "timeout": 100000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        -200
+      ],
+      "id": "73232c6e-8b17-476f-b36b-8760f16b74f2",
+      "name": "process-results"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('run-description').item.json.body.agents[0].url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"region\": \"Bavaria\",\n  \"min_price\": 100000\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        -200
+      ],
+      "id": "243cbce1-0202-4903-a044-d1b0897b68ae",
+      "name": "agent-123-4542"
+    },
+    {
+      "parameters": {
+        "url": "=https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/env",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        -200
+      ],
+      "id": "9d7f80bf-2209-4428-8562-38eb80286225",
+      "name": "env"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "82d96d50-49d3-4ee5-aa46-bff29070dbe8",
+              "leftValue": "={{ $('run-description').item.json.body.agents[0].hasField('requiresHumanFeedback') }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        -200
+      ],
+      "id": "52cdc383-dfc0-43ec-8db1-7816b0004002",
+      "name": "requires-human-feedback"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('env').item.json.nginaUrl }}/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/request-human-feedback/{{ $('env').item.json.agents.first().id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_id\": \"{{ $workflow.id }}\",\n  \"callback_url\": \"{{ $execution.resumeUrl }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        -380
+      ],
+      "id": "498475dd-7ffc-4d3a-8a98-0619c543e3e7",
+      "name": "request-feedback"
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        -380
+      ],
+      "id": "6dd19a95-900a-4f33-9b40-5f8e9786f577",
+      "name": "wait-for-human-feedback",
+      "webhookId": "c3ade437-461c-4590-b6a2-0a95d27fffa5"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ae925af4-f691-440a-9096-0861b62ca00b",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        -200
+      ],
+      "id": "50451197-b8ee-4766-ab78-679a98598c5f",
+      "name": "run-description",
+      "webhookId": "ae925af4-f691-440a-9096-0861b62ca00b"
+    },
+    {
+      "parameters": {
+        "content": "## Human in the loop\nSends an email to the recipients which contains a link to the frontend",
+        "width": 320,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        -560
+      ],
+      "id": "53c51749-99e7-47b3-96b0-b7c2a1a59144",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Pass variables & keys\nThese steps intialize variables and condition switches for the following seps (similar to .env in software development)",
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -400
+      ],
+      "id": "990811f1-5b8e-4497-a327-3c5db2c8a3fb",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Call agent(s)\nCall the agent by POSTing input variables and authentication information",
+        "width": 320,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -180,
+        -400
+      ],
+      "id": "7dfcee43-61bb-4607-9cfe-6696bfd9951c",
+      "name": "Sticky Note2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "process-results": {
+      "main": [
+        [
+          {
+            "node": "requires-human-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent-123-4542": {
+      "main": [
+        [
+          {
+            "node": "process-results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "env": {
+      "main": [
+        [
+          {
+            "node": "agent-123-4542",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "requires-human-feedback": {
+      "main": [
+        [
+          {
+            "node": "request-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request-feedback": {
+      "main": [
+        [
+          {
+            "node": "wait-for-human-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wait-for-human-feedback": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "run-description": {
+      "main": [
+        [
+          {
+            "node": "env",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a5bc62d8-d2c4-47d5-8649-697f4b6d786d",
+  "meta": {
+    "instanceId": "7c690e7489a01137843a5ddf2d7133e7581be957758e45a5b620578b2b8f5463"
+  },
+  "id": "yDpVrZq6KfUWKbqd",
+  "tags": []
+}
