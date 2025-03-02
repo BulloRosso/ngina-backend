@@ -3,7 +3,11 @@ This is the nginA API backend based on
 * Python
 * FastAPI/Pydantic
 
-## What is nginA?
+![Splash screen](/doc/splash-screen.jpg)
+
+More about the origins of ngina: https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf
+
+## Why was nginA invented?
 nginA is a wrapper around n8n to execute agentic workflows. It was
 written to enable self-hosted workflows which are compliant to
 EU regulations (e. g. hostend on EU servers).
