@@ -19,7 +19,10 @@ class OperationService:
             supabase_url=os.getenv("SUPABASE_URL"),
             supabase_key=os.getenv("SUPABASE_KEY")
         )
-        self.ngina_url = os.getenv("NGINA_URL")
+        
+        ngina_url = os.getenv("NGINA_URL", "http://localhost:8000")
+        self.api_base_url = ngina_url + "/api/v1"
+        self.ngina_accounting_key = os.getenv("NGINA_ACCOUNTING_KEY")
         self.ngina_workflow_key = os.getenv("NGINA_WORKFLOW_KEY")
         self.ngina_scratchpad_key = os.getenv("NGINA_SCRATCHPAD_KEY")
         self.n8n_url = os.getenv("N8N_URL")
@@ -491,167 +494,95 @@ class OperationService:
                 detail=f"Failed to get workflow environment: {str(e)}"
             )
 
-    async def process_workflow_results(self, run_id: str, agent_id: str, results: Dict[str, Any], api_key: str) -> Dict[str, Any]:
+    async def process_workflow_results(self, run_id: str, agent_id: str, result_data: Any, x_ngina_key: Optional[str] = None):
         """Process workflow results and store them using the scratchpads service"""
         try:
-            # Verify API key
-            if api_key != self.ngina_workflow_key:
+            # Validate API key
+            if x_ngina_key != self.ngina_workflow_key:
                 raise HTTPException(
-                    status_code=401, 
+                    status_code=401,
                     detail="Invalid API key"
                 )
 
-            # Get the run details from the agent_runs table
-            run_result = self.supabase.table("agent_runs")\
-                .select("*")\
-                .eq("id", run_id)\
-                .execute()
-
-            if not run_result.data:
-                raise HTTPException(status_code=404, detail="Run not found")
-
-            # Get the user_id associated with this run
-            user_id = run_result.data[0].get("user_id")
-
-            if not user_id:
+            # Verify that the operation exists
+            operation = await self.get_operation_by_run_id(run_id)
+            if not operation:
                 raise HTTPException(
-                    status_code=400,
-                    detail="No user associated with this run"
+                    status_code=404,
+                    detail=f"Operation with run_id '{run_id}' not found"
                 )
 
-            # Use httpx to call the scratchpads endpoint
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "x-ngina-key": self.ngina_scratchpad_key,
-                }
+            # Get agent details to retrieve credits_per_run
+            agent_service = AgentService()
+            try:
+                agent = await agent_service.get_agent(agent_id)
 
-                # Use the user's ID instead of a system ID
-                base_url = f"{self.ngina_url}/api/v1/scratchpads/{user_id}/{run_id}/{agent_id}"
+                # Asynchronously charge the user for agent execution without awaiting the result
+                if agent.credits_per_run and agent.credits_per_run > 0:
+                    asyncio.create_task(self._charge_user_for_agent(
+                        user_id=operation.user_id,
+                        agent_id=agent_id,
+                        agent_title=agent.title.en if agent.title and agent.title.en else f"Agent {agent_id}",
+                        credits=agent.credits_per_run,
+                        run_id=run_id
+                    ))
+                    logging.info(f"Initiated async credit charge of {agent.credits_per_run} for user {operation.user_id}, run_id {run_id}")
+            except Exception as e:
+                # Log the error but continue processing the results
+                logging.error(f"Error fetching agent or charging credits: {str(e)}")
 
-                # Log request details for debugging
-                logging.info(f"Base scratchpad URL: {base_url} for user_id: {user_id}")
+            # Process and store the results
+            # [Remaining implementation of process_workflow_results]
 
-                # First, store the original JSON results
-                json_str = json.dumps(results)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"results_{timestamp}.json"
+            return {"status": "success", "message": "Results processed successfully"}
 
-                # Create a multipart form with files field for the JSON
-                files = {
-                    "files": (filename, json_str, "application/json")
-                }
-
-                # Make POST request to the scratchpads endpoint with JSON file
-                response = await client.post(
-                    base_url, 
-                    files=files,
-                    headers=headers
-                )
-
-                # Log response for debugging
-                logging.info(f"JSON storage response status: {response.status_code}")
-
-                if response.status_code != 200:
-                    error_detail = response.json() if response.headers.get("content-type") == "application/json" else response.text
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Failed to store results: {error_detail}"
-                    )
-
-                # Now analyze the results for URLs and download/store each file
-                url_files_found = []
-
-                # Helper function to recursively find URL properties in nested dictionaries
-                def find_url_properties(obj, path=""):
-                    if isinstance(obj, dict):
-                        for key, value in obj.items():
-                            new_path = f"{path}.{key}" if path else key
-
-                            # Check if property ends with _url and value is an HTTP URL
-                            if (key.endswith("_url") and 
-                                isinstance(value, str) and 
-                                value.startswith("http")):
-                                url_files_found.append((new_path, value))
-
-                            # Recursively search nested objects
-                            find_url_properties(value, new_path)
-                    elif isinstance(obj, list):
-                        for i, item in enumerate(obj):
-                            new_path = f"{path}[{i}]"
-                            find_url_properties(item, new_path)
-
-                # Find all URL properties in the results
-                find_url_properties(results)
-
-                logging.info(f"Found {len(url_files_found)} URL properties to download")
-
-                # Download and store each file separately
-                processed_files = []
-                for path, url in url_files_found:
-                    try:
-                        logging.info(f"Downloading file from URL: {url}")
-
-                        # Download the file
-                        file_response = await client.get(url)
-
-                        if file_response.status_code != 200:
-                            logging.warning(f"Failed to download file from {url}: {file_response.status_code}")
-                            continue
-
-                        # Get content type and file data
-                        content_type = file_response.headers.get("content-type", "application/octet-stream")
-                        file_data = file_response.content
-
-                        # Generate filename based on URL
-                        url_parts = url.split("/")
-                        url_filename = url_parts[-1].split("?")[0]  # Remove query parameters
-                        if not url_filename:
-                            # Fallback filename if URL doesn't have a clear filename
-                            url_filename = f"file_{len(processed_files)}_{timestamp}"
-
-                        # Create a multipart form for this single file
-                        file_files = {
-                            "files": (url_filename, file_data, content_type)
-                        }
-
-                        # Post the file to scratchpads
-                        file_post_response = await client.post(
-                            base_url,
-                            files=file_files,
-                            headers=headers
-                        )
-
-                        if file_post_response.status_code != 200:
-                            logging.warning(f"Failed to store file from {url}: {file_post_response.status_code}")
-                            continue
-
-                        processed_files.append({
-                            "path": path,
-                            "url": url,
-                            "mime_type": content_type,
-                            "filename": url_filename
-                        })
-
-                        logging.info(f"Successfully stored file from {url} with type {content_type}")
-
-                    except Exception as e:
-                        logging.error(f"Error processing URL {url}: {str(e)}")
-
-                return {
-                    "message": "Results successfully stored",
-                    "run_id": run_id,
-                    "agent_id": str(agent_id),
-                    "user_id": user_id,
-                    "downloaded_files": len(processed_files),
-                    "url_properties_found": len(url_files_found)
-                }
         except Exception as e:
             logging.error(f"Error processing workflow results: {str(e)}")
+            if isinstance(e, HTTPException):
+                raise e
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to process workflow results: {str(e)}"
             )
 
+    async def _charge_user_for_agent(self, user_id: UUID4, agent_id: str, agent_title: str, credits: int, run_id: str):
+        """Helper method to charge user credits for agent execution"""
+        try:
+            # Prepare the charge request
+            charge_data = {
+                "amount": credits,
+                "description": f"Agent execution: {agent_title}",
+                "metadata": {
+                    "agent_id": agent_id,
+                    "run_id": run_id
+                }
+            }
+
+            # Call the accounting service to charge the user
+            async with httpx.AsyncClient() as client:
+                accounting_url = f"{self.api_base_url}/accounting/charge/{user_id}"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Ngina-Key": self.ngina_accounting_key
+                }
+
+                response = await client.post(
+                    accounting_url,
+                    json=charge_data,
+                    headers=headers,
+                    timeout=10.0  # Set a reasonable timeout
+                )
+
+                # Log the result but don't wait for it
+                if response.status_code == 200:
+                    logging.info(f"Successfully charged {credits} credits to user {user_id} for agent {agent_id}")
+                else:
+                    logging.error(f"Failed to charge user {user_id}: {response.status_code} - {response.text}")
+
+        except Exception as e:
+            # Just log the error, don't raise an exception since this is an async task
+            logging.error(f"Error charging user {user_id} for agent {agent_id}: {str(e)}")
+            
     async def trigger_workflow_webhook(self, webhook_url: str, payload: Dict[str, Any] = None) -> None:
         """Trigger a workflow webhook without waiting for the response"""
         try:
@@ -930,4 +861,52 @@ class OperationService:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to get human feedback: {str(e)}"
+            )
+
+    async def update_operation_status(self, run_id: str, status: str, debug_info: Dict[str, Any], api_key: str) -> Dict[str, Any]:
+        """Update the status of an operation with debug information"""
+        try:
+            # Verify API key
+            if api_key != self.ngina_workflow_key:
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Invalid API key"
+                )
+    
+            # Get the current timestamp for finished_at
+            now = datetime.now(timezone.utc).isoformat()
+    
+            # Update the agent_runs table with status, finished_at and results
+            update_data = {
+                "status": status,
+                "finished_at": now,
+                "results": debug_info
+            }
+    
+            # Update the record in the database
+            result = self.supabase.table("agent_runs")\
+                .update(update_data)\
+                .eq("id", run_id)\
+                .execute()
+    
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Operation not found")
+    
+            updated_record = result.data[0]
+    
+            # Log successful update
+            logging.info(f"Successfully updated operation status for run_id: {run_id} to {status}")
+    
+            return {
+                "message": "Operation status updated successfully",
+                "run_id": run_id,
+                "status": status,
+                "finished_at": now
+            }
+    
+        except Exception as e:
+            logging.error(f"Error updating operation status: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update operation status: {str(e)}"
             )

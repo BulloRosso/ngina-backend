@@ -173,3 +173,49 @@ async def update_human_feedback(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
+@router.post("/run/{run_id}/status")
+async def update_operation_status(
+    request: Request,
+    run_id: str,
+    x_ngina_key: Optional[str] = Header(None)
+):
+    """Update the status of an operation with debug information"""
+    try:
+        # Get the raw JSON from the request body
+        body_json = await request.json()
+
+        # Log the received data for debugging
+        logging.info(f"Received status update for run_id: {run_id}")
+
+        # Validate required fields
+        if "status" not in body_json:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing required field 'status'"
+            )
+
+        status = body_json.get("status")
+        debug_info = body_json.get("debug_info", {})
+
+        # Validate status value
+        if status not in ["success", "failure"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid status value. Must be 'success' or 'failure'"
+            )
+
+        service = OperationService()
+        return await service.update_operation_status(run_id, status, debug_info, x_ngina_key)
+    except json.JSONDecodeError as e:
+        logging.error(f"Error decoding JSON: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid JSON in request body: {str(e)}"
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error updating operation status: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
