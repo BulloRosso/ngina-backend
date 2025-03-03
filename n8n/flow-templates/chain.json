@@ -1,0 +1,543 @@
+{
+  "name": "${{flow-name}}",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "=${{ngina_backend_url}}/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/env",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -620,
+        -200
+      ],
+      "id": "9d7f80bf-2209-4428-8562-38eb80286225",
+      "name": "env"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "82d96d50-49d3-4ee5-aa46-bff29070dbe8",
+              "leftValue": "={{ $('run-description').item.json.body.agents[0].hasField('requiresHumanFeedback') }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        -220
+      ],
+      "id": "52cdc383-dfc0-43ec-8db1-7816b0004002",
+      "name": "requires-human-feedback"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('env').item.json.nginaUrl }}/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/request-human-feedback/{{ $('env').item.json.agents.first().id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_id\": \"{{ $workflow.id }}\",\n  \"callback_url\": \"{{ $execution.resumeUrl }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        -400
+      ],
+      "id": "498475dd-7ffc-4d3a-8a98-0619c543e3e7",
+      "name": "request-feedback"
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1720,
+        -400
+      ],
+      "id": "6dd19a95-900a-4f33-9b40-5f8e9786f577",
+      "name": "wait-for-human-feedback",
+      "webhookId": "c3ade437-461c-4590-b6a2-0a95d27fffa5"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "${{webhook_id}}",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -840,
+        -200
+      ],
+      "id": "50451197-b8ee-4766-ab78-679a98598c5f",
+      "name": "run-description",
+      "webhookId": "${{webhook_id}}"
+    },
+    {
+      "parameters": {
+        "content": "## Human in the loop\nSends an email to the recipients which contains a link to the frontend",
+        "height": 120,
+        "width": 320,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        -560
+      ],
+      "id": "53c51749-99e7-47b3-96b0-b7c2a1a59144",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Pass variables & keys\nThese steps receives the INPUT JSON and intialize variables + condition switches for the following steps (similar to .env in software development)",
+        "height": 140,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        -400
+      ],
+      "id": "990811f1-5b8e-4497-a327-3c5db2c8a3fb",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Call agent\nCall the agent by POSTing input variables and authentication information",
+        "height": 120,
+        "width": 260,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -400
+      ],
+      "id": "7dfcee43-61bb-4607-9cfe-6696bfd9951c",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        -220
+      ],
+      "id": "24133126-cd96-4bdd-8f24-391fe58c0c45",
+      "name": "data-post-processing"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/results/{{ $('run-description').item.json.body.agents.first().id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $input.first().json }}",
+        "options": {
+          "timeout": 100000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        -220
+      ],
+      "id": "73232c6e-8b17-476f-b36b-8760f16b74f2",
+      "name": "store-to-scratchpad"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"region\": \"Bavaria\",\n  \"min_price\": 100000\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        -220
+      ],
+      "id": "243cbce1-0202-4903-a044-d1b0897b68ae",
+      "name": "post-to-agent"
+    },
+    {
+      "parameters": {
+        "content": "## Data Handling\nApply transformations to the JSON OUTPUT to satisfy INPUT JSON schema requirments of next agent (or final result)",
+        "height": 120,
+        "width": 380
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        640,
+        -400
+      ],
+      "id": "5378e6e5-5ea1-47ce-8ee4-a2afc14e405c",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        160
+      ],
+      "id": "ac462095-9007-41fd-8287-3320a075055c",
+      "name": "task-finished"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "02d5645e-e6e9-4e49-bbcd-2b3a27dc2bfa",
+              "name": "agentIndex",
+              "value": 0,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -400,
+        -200
+      ],
+      "id": "02c72516-d508-4829-b437-7dd392108c1e",
+      "name": "init-workflow-vars"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(\"agentIndex\")\nconsole.log($('agent-index').item.json.agentIndex )\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        -200
+      ],
+      "id": "a4196429-eb49-4078-b0bf-67c303be0ecf",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "20aa8146-baf1-4cf2-b8ef-8d24fe005ba0",
+              "name": "agentIndex",
+              "value": "={{ $('agent-index').item.json.agentIndex + 1}} ",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1900,
+        -200
+      ],
+      "id": "b5f92bbf-ddfb-4e3d-820d-b7d1d6836aee",
+      "name": "next-agent"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "96a736de-e659-4fe0-8d03-b2eb6de7aba4",
+              "leftValue": "={{ $json.agentIndex }}",
+              "rightValue": "={{ $('run-description').item.json.body.agents.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        60,
+        -200
+      ],
+      "id": "9de4cbe9-50ae-4ea6-859e-1c3f2150215f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "373fd833-1246-42c5-a0a6-46b0f9948985",
+              "name": "agentIndex",
+              "value": "={{ $json.agentIndex }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -180,
+        -200
+      ],
+      "id": "73841a82-6085-46c8-b228-cce1044fd94d",
+      "name": "agent-index"
+    },
+    {
+      "parameters": {
+        "content": "## Chain\nLoop over the initally passed agents starting with agentIndex = 0",
+        "height": 120,
+        "width": 360
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        -400
+      ],
+      "id": "aaaf2372-8b1c-4a23-aa81-8afa14d03b55",
+      "name": "Sticky Note4"
+    }
+  ],
+  "connections": {
+    "env": {
+      "main": [
+        [
+          {
+            "node": "init-workflow-vars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "requires-human-feedback": {
+      "main": [
+        [
+          {
+            "node": "request-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request-feedback": {
+      "main": [
+        [
+          {
+            "node": "wait-for-human-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wait-for-human-feedback": {
+      "main": [
+        [
+          {
+            "node": "next-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "run-description": {
+      "main": [
+        [
+          {
+            "node": "env",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "data-post-processing": {
+      "main": [
+        [
+          {
+            "node": "store-to-scratchpad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "store-to-scratchpad": {
+      "main": [
+        [
+          {
+            "node": "requires-human-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "post-to-agent": {
+      "main": [
+        [
+          {
+            "node": "data-post-processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "init-workflow-vars": {
+      "main": [
+        [
+          {
+            "node": "agent-index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "next-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "next-agent": {
+      "main": [
+        [
+          {
+            "node": "agent-index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "post-to-agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "task-finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent-index": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
