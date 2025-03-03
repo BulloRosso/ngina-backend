@@ -174,7 +174,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/results/{{ $('run-description').item.json.body.agents.first().id }}",
+        "url": "=${{ngina_backend_url}}/operations/workflow/{{$('run-description').first().json.body.run_id}}/results/{{ $('run-description').item.json.body.agents.first().id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -241,7 +241,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        300,
+        520,
         160
       ],
       "id": "ac462095-9007-41fd-8287-3320a075055c",
@@ -376,6 +376,33 @@
       ],
       "id": "aaaf2372-8b1c-4a23-aa81-8afa14d03b55",
       "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=${{ngina_backend_url}}/operations/run/{{$('run-description').first().json.body.run_id}}/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"status\": \"success\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        160
+      ],
+      "id": "e0477dfa-5edc-478f-b0e7-521c164e6285",
+      "name": "status-finished"
     }
   ],
   "connections": {
@@ -518,7 +545,7 @@
         ],
         [
           {
-            "node": "task-finished",
+            "node": "status-finished",
             "type": "main",
             "index": 0
           }
@@ -530,6 +557,17 @@
         [
           {
             "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "status-finished": {
+      "main": [
+        [
+          {
+            "node": "task-finished",
             "type": "main",
             "index": 0
           }
