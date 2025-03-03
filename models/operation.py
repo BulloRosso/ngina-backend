@@ -24,5 +24,5 @@ class OperationCreate(OperationBase):
 class Operation(OperationBase):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: UUID4
     created_at: datetime

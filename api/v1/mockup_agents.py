@@ -239,7 +239,7 @@ async def get_html_email_response():
     await asyncio.sleep(3)
     
     return {
-        "success": true
+        "success": True
     }
 
 def get_personalized_writer_metadata():

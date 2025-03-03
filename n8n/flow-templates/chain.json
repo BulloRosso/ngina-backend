@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "url": "=${{ngina_backend_url}}/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/env",
+        "url": "=${{ngina_backend_url}}/operations/workflow/{{$('run-description').first().json.body.run_id}}/env",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

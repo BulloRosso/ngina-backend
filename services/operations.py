@@ -22,6 +22,7 @@ class OperationService:
         
         ngina_url = os.getenv("NGINA_URL", "http://localhost:8000")
         self.api_base_url = ngina_url + "/api/v1"
+        self.ngina_url = ngina_url
         self.ngina_accounting_key = os.getenv("NGINA_ACCOUNTING_KEY")
         self.ngina_workflow_key = os.getenv("NGINA_WORKFLOW_KEY")
         self.ngina_scratchpad_key = os.getenv("NGINA_SCRATCHPAD_KEY")
@@ -155,10 +156,10 @@ class OperationService:
             # Replace variables in the template
             flow_name = f"Run of {agent_name}"
             workflow_content = workflow_template.replace("${{flow-name}}", flow_name)
-            workflow_content = workflow_content.replace("${{ngina_backend_url}}", self.ngina_url or "")
+            workflow_content = workflow_content.replace("${{ngina_backend_url}}", self.api_base_url or "")
             # Make sure to enclose webhook_id in double curly braces for replacement
             workflow_content = workflow_content.replace("${{webhook_id}}", webhook_id)
-            workflow_content = workflow_content.replace("{{webhook_id}}", webhook_id)
+            
 
             logging.info(f"Webhook ID generated for workflow: {webhook_id}")
 
@@ -290,19 +291,43 @@ class OperationService:
                 "workflow_id": n8n_workflow_id
             }
 
+    async def get_operation_by_run_id(self, run_id: str) -> Operation:
+        """
+        Get an operation by its run_id
+        """
+        try:
+            result = self.supabase.table("agent_runs")\
+                .select("*")\
+                .eq("id", run_id)\
+                .execute()
+
+            if not result.data:
+                return None
+
+            return Operation.model_validate(result.data[0])
+
+        except Exception as e:
+            logging.error(f"Error getting operation by run_id: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to get operation by run_id: {str(e)}")
+            
     async def create_or_update_operation(self, operation_data: dict) -> Operation:
         try:
+            agent_endpoint_url = None  # Initialize this to track the agent endpoint URL
+
             # If agent_id is provided, get the agent details
             if operation_data.get("agent_id"):
-                # Get agent details
+                # Get agent details - make sure this is properly awaited
                 agent_result = self.supabase.table("agents")\
                     .select("*")\
                     .eq("id", operation_data["agent_id"])\
                     .execute()
 
-                if agent_result.data:
+                if not agent_result.data:
+                    logging.warning(f"Agent with ID {operation_data['agent_id']} not found")
+                else:
                     agent = agent_result.data[0]
                     agent_name = agent.get("title", {}).get("en", "Untitled Agent")
+                    agent_endpoint_url = agent.get("agent_endpoint", "")  # Store the endpoint URL
                     webhook_url = None
 
                     # Check if the agent already has a workflow_id
@@ -310,6 +335,7 @@ class OperationService:
                     if not existing_workflow_id:
                         # Create a new workflow in n8n only if the agent doesn't have a workflow_id
                         try:
+                            # Make sure this is properly awaited
                             workflow_info = await self.create_n8n_workflow(agent_name)
 
                             # Get the n8n workflow ID from the response
@@ -317,14 +343,13 @@ class OperationService:
 
                             # Add workflow information to operation data
                             operation_data["workflow_id"] = n8n_workflow_id
-                            # Keep agent_endpoint for backward compatibility
-                            operation_data["agent_endpoint"] = workflow_info["webhook_path"]
 
                             # Create the webhook URL using webhook_id
                             webhook_url = f"{self.n8n_url}/webhook/{workflow_info['webhook_id']}"
 
                             # Update the agent's workflow_id field with the n8n workflow ID
                             try:
+                                # Make sure this is properly awaited
                                 agent_update_result = self.supabase.table("agents")\
                                     .update({"workflow_id": n8n_workflow_id})\
                                     .eq("id", operation_data["agent_id"])\
@@ -335,6 +360,7 @@ class OperationService:
 
                                     # Activate the workflow after updating the agent
                                     try:
+                                        # Make sure this is properly awaited
                                         activation_result = await self.activate_workflow(n8n_workflow_id, True)
                                         logging.info(f"Workflow activation result: {activation_result}")
                                     except Exception as activation_error:
@@ -355,26 +381,10 @@ class OperationService:
                         logging.info(f"Agent {operation_data['agent_id']} already has workflow ID: {existing_workflow_id}")
                         operation_data["workflow_id"] = existing_workflow_id
 
-                        # Keep agent_endpoint field for backward compatibility 
-                        operation_data["agent_endpoint"] = f"{existing_workflow_id}"
-
                         # Construct webhook URL using the existing workflow ID
                         webhook_url = f"{self.n8n_url}/workflow/{existing_workflow_id}"
 
-                    # After workflow is set up or if it already exists, trigger the webhook
-                    if webhook_url:
-                        # Prepare payload with initial parameters if they exist
-                        payload = None
-                        if operation_data.get("results") and operation_data["results"].get("inputParameters"):
-                            payload = {
-                                "data": operation_data["results"]["inputParameters"],
-                                "source": "automated_trigger"
-                            }
-
-                        # Trigger the webhook without waiting for response
-                        await self.trigger_workflow_webhook(webhook_url, payload)
-
-            # Check if operation exists based on workflow_id (assuming this is the unique identifier)
+            # Create or update the operation in the database
             if operation_data.get("workflow_id"):
                 existing = self.supabase.table("agent_runs")\
                     .select("*")\
@@ -395,36 +405,65 @@ class OperationService:
                     if "agent_endpoint" in operation_data:
                         update_data["agent_endpoint"] = operation_data["agent_endpoint"]
 
+                    # Make sure this is properly awaited
                     result = self.supabase.table("agent_runs")\
                         .update(update_data)\
                         .eq("workflow_id", operation_data["workflow_id"])\
                         .execute()
                 else:
                     # Create new operation
+                    # Make sure this is properly awaited
                     result = self.supabase.table("agent_runs")\
                         .insert(operation_data)\
                         .execute()
-
-                if not result.data:
-                    raise HTTPException(status_code=500, detail="Failed to create/update operation")
-
-                return Operation.model_validate(result.data[0])
-
             else:
                 # Create new operation without workflow_id
+                # Make sure this is properly awaited
                 result = self.supabase.table("agent_runs")\
                     .insert(operation_data)\
                     .execute()
 
-                if not result.data:
-                    raise HTTPException(status_code=500, detail="Failed to create operation")
+            if not result.data:
+                raise HTTPException(status_code=500, detail="Failed to create/update operation")
 
-                return Operation.model_validate(result.data[0])
+            # Get the saved operation with the assigned ID
+            saved_operation = result.data[0]
+            run_id = str(saved_operation["id"])
+            logging.info(f"Operation created/updated with ID: {run_id}")
+
+            # Now trigger the webhook if needed
+            if webhook_url:
+                # Prepare payload with initial parameters
+                payload = None
+                if operation_data.get("agent_id") and operation_data.get("results") and operation_data["results"].get("inputParameters"):
+                    payload = {
+                        "run_id": run_id,  # Use the ID from the saved operation
+                        "agents": [
+                            {
+                                "id": operation_data["agent_id"],
+                                "url": agent_endpoint_url or "",  # Use the stored endpoint URL
+                                "input": operation_data["results"]["inputParameters"]
+                            }
+                        ]
+                    }
+                    logging.info(f"Prepared webhook payload: {payload}")
+                else:
+                    logging.warning("Missing required data for webhook payload")
+                    # Create a minimal payload with just the run_id
+                    payload = {
+                        "run_id": run_id,
+                        "agents": []
+                    }
+
+                # Make sure this is properly awaited or handled if we don't want to wait
+                await self.trigger_workflow_webhook(webhook_url, payload)
+
+            return Operation.model_validate(saved_operation)
 
         except Exception as e:
-            logging.error(f"Error creating/updating operation: {str(e)}")
+            logging.error(f"Error creating/updating operation: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to create/update operation: {str(e)}")
-
+    
     async def get_operation(self, operation_id: int) -> Operation:
         try:
             result = self.supabase.table("agent_runs")\

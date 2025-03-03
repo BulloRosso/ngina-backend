@@ -42,7 +42,7 @@ async def get_team_status(current_user: UUID4 = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/workflow/{run_id}/env")
-async def get_workflow_env(run_id: str, current_user: UUID4 = Depends(get_current_user)):
+async def get_workflow_env(run_id: str):
     """Get workflow environment for a specific run_id"""
     service = OperationService()
     return await service.get_workflow_env(run_id)
