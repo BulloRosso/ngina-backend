@@ -17,6 +17,7 @@ class OperationBase(BaseModel):
     sum_credits: Optional[int] = 0
     workflow_id: Optional[str] = None
     finished_at: Optional[datetime] = None
+    user_id: Optional[UUID4] = None
 
 class OperationCreate(OperationBase):
     pass

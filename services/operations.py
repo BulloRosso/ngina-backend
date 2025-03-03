@@ -572,14 +572,143 @@ class OperationService:
                 logging.error(f"Error fetching agent or charging credits: {str(e)}")
 
             # Process and store the results
-            # [Remaining implementation of process_workflow_results]
+            # Get the user_id associated with this run
+            user_id =  str(operation.user_id)
 
-            return {"status": "success", "message": "Results processed successfully"}
+            if not user_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No user associated with this run"
+                )
 
+            # Use httpx to call the scratchpads endpoint
+            async with httpx.AsyncClient() as client:
+                headers = {
+                    "x-ngina-key": self.ngina_scratchpad_key,
+                }
+
+                # Use the user's ID instead of a system ID
+                base_url = f"{self.ngina_url}/api/v1/scratchpads/{user_id}/{run_id}/{agent_id}"
+
+                # Log request details for debugging
+                logging.info(f"Base scratchpad URL: {base_url} for user_id: {user_id}")
+
+                # First, store the original JSON results
+                json_str = json.dumps(result_data)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"results_{timestamp}.json"
+
+                # Create a multipart form with files field for the JSON
+                files = {
+                    "files": (filename, json_str, "application/json")
+                }
+
+                # Make POST request to the scratchpads endpoint with JSON file
+                response = await client.post(
+                    base_url, 
+                    files=files,
+                    headers=headers
+                )
+
+                # Log response for debugging
+                logging.info(f"JSON storage response status: {response.status_code}")
+
+                if response.status_code != 200:
+                    error_detail = response.json() if response.headers.get("content-type") == "application/json" else response.text
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Failed to store results: {error_detail}"
+                    )
+
+                # Now analyze the results for URLs and download/store each file
+                url_files_found = []
+
+                # Helper function to recursively find URL properties in nested dictionaries
+                def find_url_properties(obj, path=""):
+                    if isinstance(obj, dict):
+                        for key, value in obj.items():
+                            new_path = f"{path}.{key}" if path else key
+
+                            # Check if property ends with _url and value is an HTTP URL
+                            if (key.endswith("_url") and 
+                                isinstance(value, str) and 
+                                value.startswith("http")):
+                                url_files_found.append((new_path, value))
+
+                            # Recursively search nested objects
+                            find_url_properties(value, new_path)
+                    elif isinstance(obj, list):
+                        for i, item in enumerate(obj):
+                            new_path = f"{path}[{i}]"
+                            find_url_properties(item, new_path)
+
+                # Find all URL properties in the results
+                find_url_properties(result_data)
+
+                logging.info(f"Found {len(url_files_found)} URL properties to download")
+
+                # Download and store each file separately
+                processed_files = []
+                for path, url in url_files_found:
+                    try:
+                        logging.info(f"Downloading file from URL: {url}")
+
+                        # Download the file
+                        file_response = await client.get(url)
+
+                        if file_response.status_code != 200:
+                            logging.warning(f"Failed to download file from {url}: {file_response.status_code}")
+                            continue
+
+                        # Get content type and file data
+                        content_type = file_response.headers.get("content-type", "application/octet-stream")
+                        file_data = file_response.content
+
+                        # Generate filename based on URL
+                        url_parts = url.split("/")
+                        url_filename = url_parts[-1].split("?")[0]  # Remove query parameters
+                        if not url_filename:
+                            # Fallback filename if URL doesn't have a clear filename
+                            url_filename = f"file_{len(processed_files)}_{timestamp}"
+
+                        # Create a multipart form for this single file
+                        file_files = {
+                            "files": (url_filename, file_data, content_type)
+                        }
+
+                        # Post the file to scratchpads
+                        file_post_response = await client.post(
+                            base_url,
+                            files=file_files,
+                            headers=headers
+                        )
+
+                        if file_post_response.status_code != 200:
+                            logging.warning(f"Failed to store file from {url}: {file_post_response.status_code}")
+                            continue
+
+                        processed_files.append({
+                            "path": path,
+                            "url": url,
+                            "mime_type": content_type,
+                            "filename": url_filename
+                        })
+
+                        logging.info(f"Successfully stored file from {url} with type {content_type}")
+
+                    except Exception as e:
+                        logging.error(f"Error processing URL {url}: {str(e)}")
+
+                return {
+                    "message": "Results successfully stored",
+                    "run_id": run_id,
+                    "agent_id": str(agent_id),
+                    "user_id": user_id,
+                    "downloaded_files": len(processed_files),
+                    "url_properties_found": len(url_files_found)
+                }
         except Exception as e:
             logging.error(f"Error processing workflow results: {str(e)}")
-            if isinstance(e, HTTPException):
-                raise e
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to process workflow results: {str(e)}"
