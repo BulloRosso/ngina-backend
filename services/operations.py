@@ -10,6 +10,7 @@ from models.operation import Operation, OperationCreate, TeamStatus, AgentStatus
 from models.human_in_the_loop import HumanInTheLoop, HumanInTheLoopCreate, HumanFeedbackStatus, EmailSettings
 from services.email import EmailService
 from supabase import create_client
+from services.agents import AgentService  
 
 logger = logging.getLogger(__name__)
 
