@@ -1041,38 +1041,138 @@ class OperationService:
                     status_code=401, 
                     detail="Invalid API key"
                 )
-    
+
+            # Check if run_id is in UUIDv4 format
+            import re
+            uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.IGNORECASE)
+
+            original_id = run_id
+
+            if not uuid_pattern.match(run_id):
+                # Not a UUID, treat as an n8n operation_id
+                logging.info(f"ID {run_id} is not a UUID, treating as n8n operation_id")
+
+                if not self.n8n_url or not self.n8n_api_key:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail="N8N_URL or N8N_API_KEY environment variables not set"
+                    )
+
+                # Fetch execution data from n8n
+                try:
+                    async with httpx.AsyncClient() as client:
+                        n8n_url = f"{self.n8n_url}/api/v1/executions/{run_id}?includeData=true"
+                        logging.info(f"Fetching execution data from n8n at: {n8n_url}")
+
+                        response = await client.get(
+                            n8n_url,
+                            headers={
+                                "X-N8N-API-KEY": self.n8n_api_key,
+                                "Content-Type": "application/json"
+                            },
+                            timeout=30.0  # Increase timeout for larger responses
+                        )
+
+                        if response.status_code != 200:
+                            logging.error(f"Failed to fetch execution data from n8n: {response.status_code}")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Failed to fetch execution data from n8n: {response.status_code}"
+                            )
+
+                        execution_data_json = response.json()
+                        logging.info(f"Successfully fetched execution data for operation_id: {run_id}")
+
+                        # Try approach 1: Follow JSON hierarchy
+                        try:
+                            run_id = execution_data_json["data"]["resultData"]["runData"]["run-description"][0]["data"]["main"][0][0]["json"]["body"]["run_id"]
+                            logging.info(f"Found run_id using approach 1: {run_id}")
+                        except (KeyError, IndexError, TypeError) as e:
+                            logging.warning(f"Could not extract run_id using approach 1: {str(e)}")
+                            run_id = None
+
+                        # If approach 1 fails, try approach 2: Search for run_id attribute
+                        if not run_id:
+                            logging.info("Attempting approach 2: Searching for run_id in JSON")
+
+                            def find_run_id(obj):
+                                """Recursively search for run_id in nested dictionaries"""
+                                if isinstance(obj, dict):
+                                    if "run_id" in obj:
+                                        return obj["run_id"]
+
+                                    for key, value in obj.items():
+                                        result = find_run_id(value)
+                                        if result:
+                                            return result
+                                elif isinstance(obj, list):
+                                    for item in obj:
+                                        result = find_run_id(item)
+                                        if result:
+                                            return result
+
+                                return None
+
+                            run_id = find_run_id(execution_data_json)
+
+                            if run_id:
+                                logging.info(f"Found run_id using approach 2: {run_id}")
+                            else:
+                                logging.error("Failed to find run_id in execution data")
+                                raise HTTPException(
+                                    status_code=500, 
+                                    detail="Could not find run_id in n8n execution data"
+                                )
+
+                        # Validate that the found run_id is a valid UUID
+                        if not uuid_pattern.match(run_id):
+                            logging.error(f"Found run_id {run_id} is not a valid UUID")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Found run_id {run_id} is not a valid UUID"
+                            )
+
+                except Exception as e:
+                    if isinstance(e, HTTPException):
+                        raise e
+                    logging.error(f"Error fetching execution data from n8n: {str(e)}", exc_info=True)
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Error fetching execution data from n8n: {str(e)}"
+                    )
+
             # Get the current timestamp for finished_at
             now = datetime.now(timezone.utc).isoformat()
-    
+
             # Update the agent_runs table with status, finished_at and results
             update_data = {
                 "status": status,
                 "finished_at": now,
                 "results": debug_info
             }
-    
+
             # Update the record in the database
             result = self.supabase.table("agent_runs")\
                 .update(update_data)\
                 .eq("id", run_id)\
                 .execute()
-    
+
             if not result.data:
                 raise HTTPException(status_code=404, detail="Operation not found")
-    
+
             updated_record = result.data[0]
-    
+
             # Log successful update
             logging.info(f"Successfully updated operation status for run_id: {run_id} to {status}")
-    
+
             return {
                 "message": "Operation status updated successfully",
                 "run_id": run_id,
+                "original_id": original_id if original_id != run_id else None,
                 "status": status,
                 "finished_at": now
             }
-    
+
         except Exception as e:
             logging.error(f"Error updating operation status: {str(e)}")
             raise HTTPException(
