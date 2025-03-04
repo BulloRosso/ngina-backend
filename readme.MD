@@ -7,6 +7,10 @@ This is the nginA API backend based on
 
 More about the origins of ngina: [background story on LinkedIn](https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf)
 
+## nginA Use Case
+
+![Use case](/docs/ngina-usecase.jpg)
+
 ## Why was nginA invented?
 nginA is a wrapper around n8n to execute agentic workflows. It was
 written to enable self-hosted workflows which are compliant to
@@ -22,6 +26,14 @@ All data is stored in a Supabase instance:
 
 This setup simplifies backup/restore, because it automatically keeps
 the relations between n8n workflows and nginA workflow pointers in sync.
+
+### API Support
+nginA is an API-centric product: though it at the core a automation of automations, it 
+can be automated itself by using API calls.
+
+When the API service powers up, it shows the API documentation page:
+
+![nginA API catalog](/docs/backend-api-doc.jpg)
 
 ### Authentication
 Supabase provides the authentication subsystem which is extended by
@@ -66,3 +78,6 @@ Deploy n8n using the single Docker image to AKS.
 Deploy the React frontend to a static website app.
 #### Python Backend API
 Create a Docker image and deploy the Docker image to AKS.
+
+## The Frontend
+[React/Vite/Mui Frontend](https://github.com/BulloRosso/nginA-Frontend)
