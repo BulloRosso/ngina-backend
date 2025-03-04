@@ -8,6 +8,9 @@ This is the nginA API backend based on
 More about the origins of ngina: [background story on LinkedIn](https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf)
 
 ## nginA Use Case
+nginA offers a friendly **self-service user interface** to customers for
+* **Asynchronous AI applications** (Long running workflows)
+* **Synchronous AI applications ** (Chatbots or Taskbots)
 
 ![Use case](/docs/ngina-usecase.jpg)
 
