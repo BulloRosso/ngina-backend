@@ -10,7 +10,7 @@ More about the origins of ngina: [background story on LinkedIn](https://www.link
 ## nginA Use Case
 nginA offers a friendly **self-service user interface** to customers for
 * **Asynchronous AI applications** (Long running workflows)
-* **Synchronous AI applications ** (Chatbots or Taskbots)
+* **Synchronous AI applications** (Chatbots or Taskbots)
 
 ![Use case](/docs/ngina-usecase.jpg)
 
