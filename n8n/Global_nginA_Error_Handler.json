@@ -1,0 +1,67 @@
+{
+  "name": "Global nginA Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -200
+      ],
+      "id": "2a5a7d6d-a09c-4f6d-9b72-45bc9279ad14",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev/api/v1/operations/run/{{$json[\"execution\"][\"id\"]}}/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "abc-def-gha-12346"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"failure\",\n  \"debug_info\": {\n    \"workflow_id\": \"{{$json[\"workflow\"][\"id\"]}}\",\n    \"node\": \"{{$json[\"workflow\"][\"name\"]}}\",\n    \"message\": \"{{$json[\"execution\"][\"error\"][\"message\"]}}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        -200
+      ],
+      "id": "868a33dd-0d19-4b0f-bfef-f2309f9c41bd",
+      "name": "post-error-to-ngina"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "post-error-to-ngina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a6e9d9b7-1e2e-4e6c-b409-35d84ade6fbb",
+  "meta": {
+    "instanceId": "7c690e7489a01137843a5ddf2d7133e7581be957758e45a5b620578b2b8f5463"
+  },
+  "id": "1HE57SzRYogQz8af",
+  "tags": []
+}

@@ -45,7 +45,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1100,
+        1320,
         -220
       ],
       "id": "52cdc383-dfc0-43ec-8db1-7816b0004002",
@@ -72,7 +72,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1500,
+        1720,
         -400
       ],
       "id": "498475dd-7ffc-4d3a-8a98-0619c543e3e7",
@@ -87,7 +87,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1720,
+        1940,
         -400
       ],
       "id": "6dd19a95-900a-4f33-9b40-5f8e9786f577",
@@ -121,7 +121,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1280,
+        1500,
         -560
       ],
       "id": "53c51749-99e7-47b3-96b0-b7c2a1a59144",
@@ -165,7 +165,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        680,
+        900,
         -220
       ],
       "id": "24133126-cd96-4bdd-8f24-391fe58c0c45",
@@ -195,7 +195,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        900,
+        1120,
         -220
       ],
       "id": "73232c6e-8b17-476f-b36b-8760f16b74f2",
@@ -213,7 +213,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        460,
+        680,
         -220
       ],
       "id": "243cbce1-0202-4903-a044-d1b0897b68ae",
@@ -241,7 +241,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        300,
+        520,
         160
       ],
       "id": "ac462095-9007-41fd-8287-3320a075055c",
@@ -272,19 +272,6 @@
     },
     {
       "parameters": {
-        "jsCode": "console.log(\"agentIndex\")\nconsole.log($('agent-index').item.json.agentIndex )\n\nreturn $input.all();"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1520,
-        -200
-      ],
-      "id": "a4196429-eb49-4078-b0bf-67c303be0ecf",
-      "name": "Code"
-    },
-    {
-      "parameters": {
         "assignments": {
           "assignments": [
             {
@@ -300,7 +287,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1900,
+        2120,
         -200
       ],
       "id": "b5f92bbf-ddfb-4e3d-820d-b7d1d6836aee",
@@ -376,6 +363,46 @@
       ],
       "id": "aaaf2372-8b1c-4a23-aa81-8afa14d03b55",
       "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(\"agentIndex\")\nconsole.log($('agent-index').item.json.agentIndex )\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        -200
+      ],
+      "id": "a4196429-eb49-4078-b0bf-67c303be0ecf",
+      "name": "debug-vars"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev/api/v1/operations/run/{{$('run-description').first().json.body.run_id}}/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"status\": \"success\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        160
+      ],
+      "id": "e0477dfa-5edc-478f-b0e7-521c164e6285",
+      "name": "status-finished"
     }
   ],
   "pinData": {},
@@ -402,7 +429,7 @@
         ],
         [
           {
-            "node": "Code",
+            "node": "debug-vars",
             "type": "main",
             "index": 0
           }
@@ -486,17 +513,6 @@
         ]
       ]
     },
-    "Code": {
-      "main": [
-        [
-          {
-            "node": "next-agent",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "next-agent": {
       "main": [
         [
@@ -519,7 +535,7 @@
         ],
         [
           {
-            "node": "task-finished",
+            "node": "status-finished",
             "type": "main",
             "index": 0
           }
@@ -536,13 +552,37 @@
           }
         ]
       ]
+    },
+    "debug-vars": {
+      "main": [
+        [
+          {
+            "node": "next-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "status-finished": {
+      "main": [
+        [
+          {
+            "node": "task-finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "1HE57SzRYogQz8af"
   },
-  "versionId": "59d64488-d709-4eec-aed1-77c184e59e4a",
+  "versionId": "da92f5ed-3ac3-4d44-bdac-4b50a565b161",
   "meta": {
     "instanceId": "7c690e7489a01137843a5ddf2d7133e7581be957758e45a5b620578b2b8f5463"
   },
