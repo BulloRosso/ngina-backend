@@ -12,6 +12,8 @@ nginA offers a friendly **self-service user interface** to customers for
 * **Asynchronous AI applications** (Long running workflows)
 * **Synchronous AI applications** (Chatbots or Taskbots)
 
+nginA is most useful in scenarios where you need to combine **private data** with AI applications and/or
+want to give the customers UI access for largen amounts of AI generated content (PDFs, images, ...).
 ![Use case](/docs/ngina-usecase.jpg)
 
 ## Why was nginA invented?
