@@ -1032,6 +1032,25 @@ class OperationService:
                 detail=f"Failed to get human feedback: {str(e)}"
             )
 
+    async def get_agent_run_history(self, agent_id: UUID4) -> List[Operation]:
+        """Get the 50 most recent operations for a specific agent"""
+        try:
+            result = self.supabase.table("agent_runs")\
+                .select("*")\
+                .eq("agent_id", str(agent_id))\
+                .order("created_at", desc=True)\
+                .limit(50)\
+                .execute()
+
+            if not result.data:
+                return []
+
+            return [Operation.model_validate(operation) for operation in result.data]
+
+        except Exception as e:
+            logging.error(f"Error getting agent run history: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to get agent run history: {str(e)}")
+    
     async def update_operation_status(self, run_id: str, status: str, debug_info: Dict[str, Any], api_key: str) -> Dict[str, Any]:
         """Update the status of an operation with debug information"""
         try:

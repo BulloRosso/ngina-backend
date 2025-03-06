@@ -407,21 +407,50 @@ class AgentService:
             logging.error(f"Error listing agents: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
 
+    # services/agents.py - Updated update_agent method
+
     async def update_agent(self, agent_id: UUID4, agent_data: dict) -> Agent:
         try:
-            # First validate the input data using AgentCreate model
-            agent = AgentCreate.model_validate(agent_data)
+            # Convert the input dictionaries to model classes only if they're not already models
+            if "title" in agent_data and isinstance(agent_data["title"], dict):
+                title_data = agent_data["title"]
+                title = I18nContent(
+                    en=title_data.get("en"),
+                    de=title_data.get("de")
+                )
+                agent_data["title"] = title
 
+            if "description" in agent_data and isinstance(agent_data["description"], dict):
+                desc_data = agent_data["description"]
+                description = I18nContent(
+                    en=desc_data.get("en"),
+                    de=desc_data.get("de")
+                )
+                agent_data["description"] = description
+
+            # Create an AgentCreate model for validation
+            agent = AgentCreate(**agent_data)
+
+            # Map the model data back to a dictionary for Supabase
             update_data = {
                 "title": agent.title.model_dump() if agent.title else None,
                 "description": agent.description.model_dump() if agent.description else None,
-                "input": agent.input.model_dump() if agent.input else None,
-                "output": agent.output.model_dump() if agent.output else None,
+                "input": agent_data.get("input"),  # Use original input dictionary
+                "output": agent_data.get("output"),  # Use original output dictionary
+                "input_example": agent_data.get("input_example"),
+                "output_example": agent_data.get("output_example"),
                 "credits_per_run": agent.credits_per_run,
                 "workflow_id": agent.workflow_id,
                 "stars": agent.stars,
-                "image_url": agent.image_url
+                "authentication": agent.authentication,
+                "type": agent.type or "atom",
+                "icon_svg": agent.icon_svg,
+                "image_url": agent.image_url,
+                "max_execution_time_secs": agent.max_execution_time_secs,
+                "agent_endpoint": agent.agent_endpoint
             }
+
+            logging.info(f"Updating agent with data: {update_data}")
 
             result = self.supabase.table("agents")\
                 .update(update_data)\

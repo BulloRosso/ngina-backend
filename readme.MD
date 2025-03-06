@@ -67,6 +67,8 @@ Set the environment variables to point to the Supabase instance:
 
 ![Docker environment variables](/docs/render-com-params-n8n-anonymous.jpg)
 
+Please enter "n8n" as schema name (instead of public).
+
 Make sure you use the pooled connection settings from the Supabase connection list!
 
 #### Frontend and Python API Backend

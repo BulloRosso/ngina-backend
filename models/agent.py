@@ -16,6 +16,8 @@ class AgentBase(BaseModel):
     description: Optional[I18nContent] = None
     input: Optional[Any] = None
     output: Optional[Any] = None
+    input_example: Optional[Any] = None
+    output_example: Optional[Any] = None
     credits_per_run: Optional[int] = 0
     workflow_id: Optional[str] = None
     stars: Optional[int] = 0
