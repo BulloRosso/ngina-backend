@@ -24,7 +24,7 @@ def process_schema(data: Any) -> Any:
     Otherwise, generate a schema from the data using genson.
     """
     # If it's already a JSON schema, return as is
-    if isinstance(data, dict) and data.get("$schema") == "http://json-schema.org/schema#":
+    if isinstance(data, dict) and isinstance(data.get("$schema"), str) and data.get("$schema").startswith("http://json-schema.org/"):
         return data
 
     # Generate schema from data using genson

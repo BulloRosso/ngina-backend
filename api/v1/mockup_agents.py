@@ -156,6 +156,21 @@ def get_real_estate_metadata():
         }
     }
 
+async def get_crm_lookup_response():
+    
+    # Non-blocking wait for 3 to simulate AI processing
+    await asyncio.sleep(3)
+
+    return {
+        "persons": [
+            { "first_name": "John",
+              "last_name": "Doe", 
+              "email": "john.doe@house-junkies.com",
+              "phone": "+49 123 456 789"
+            }
+        ]
+    }
+
 async def get_real_estate_response():
 
     # Non-blocking wait for 3 to simulate AI processing
@@ -248,28 +263,50 @@ def get_personalized_writer_metadata():
         "metadata": {
             "name": "personalized_writer_agent",
             "title": {
-                "de": "Beschreibt ein Bild.",
-                "en": "Describes an image."
+                "de": "Immobilien-Poet",
+                "en": "Real-estate Poetry Agent"
             },
             "description": {
-                "de": "Erstellt personalisierte Texte",
-                "en": "Creates personalized text content"
+                "de": "Beschreibt eine Immobilie in einem der gewählten Stile.",
+                "en": "Describes a real estate property in one of the available Styles."
             },
             "icon_svg":'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8,12H16V14H8V12M10,20H6V4H13V9H18V12.1L20,10.1V8L14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H10V20M8,18H12.1L13,17.1V16H8V18M20.2,13C20.3,13 20.5,13.1 20.6,13.2L21.9,14.5C22.1,14.7 22.1,15.1 21.9,15.3L20.9,16.3L18.8,14.2L19.8,13.2C19.9,13.1 20,13 20.2,13M20.2,16.9L14.1,23H12V20.9L18.1,14.8L20.2,16.9Z" /></svg>',
             "maxRuntimeSeconds": 240
         },
         "credentials": {},
         "input": {
-            "topic": {"type": "text",
-                     "description": "Mandatory parameter. Name of the object to descirbe, e.g. 'My cute poodle Cookie'"},
-            "img_url": {"type": "url",
-                      "description": "Mandatory parameter. The public url of an jpg or png image to be analyzed" },
-            "max_length": {"type": "number",
-                          "description": "Optional parameter. Maximum length of the generated text in words. Default is 500"}
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "type": "object",
+          "properties": {
+            "style": {
+              "type": "string",
+              "description": "The artistic or emotional style to apply",
+              "enum": ["simple", "romantic", "optimistic"]
+            },
+            "source_text": {
+              "type": "string"
+            },
+            "max_words": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "style",
+            "source_text"
+          ]
         },
         "output": {
-            "content": {"type": "text",
-                       "description": "The text which was created as description of the image provided as input."}
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "The generated text in markdown format"
+            }
+          },
+          "required": [
+            "content"
+          ]
         }
     }
 
@@ -309,6 +346,80 @@ def get_image_selector_metadata():
         }
     }
 
+def get_crm_lookup_metadata():
+    return {
+        "schemaName": "ngina-metadata.0.9",
+        "metadata": {
+            "name": "crm_lookup",
+            "title": {
+                "de": "Customer Relationship Management System",
+                "en": "Customer Relationship Management System"
+            },
+            "description": {
+                "de": "Findet einen Kunden nach Name und Vorname.",
+                "en": "Finds a customer by first name and surname."
+            },
+            "icon_svg":'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.5,12C18,12 20,14 20,16.5C20,17.38 19.75,18.21 19.31,18.9L22.39,22L21,23.39L17.88,20.32C17.19,20.75 16.37,21 15.5,21C13,21 11,19 11,16.5C11,14 13,12 15.5,12M15.5,14A2.5,2.5 0 0,0 13,16.5A2.5,2.5 0 0,0 15.5,19A2.5,2.5 0 0,0 18,16.5A2.5,2.5 0 0,0 15.5,14M10,4A4,4 0 0,1 14,8C14,8.91 13.69,9.75 13.18,10.43C12.32,10.75 11.55,11.26 10.91,11.9L10,12A4,4 0 0,1 6,8A4,4 0 0,1 10,4M2,20V18C2,15.88 5.31,14.14 9.5,14C9.18,14.78 9,15.62 9,16.5C9,17.79 9.38,19 10,20H2Z" /></svg>',
+            "maxRuntimeSeconds": 20
+        },
+        "credentials": {},
+        "input": {
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "type": "object",
+          "properties": {
+            "first_name": {
+              "type": "string"
+            },
+            "last_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "first_name",
+            "last_name"
+          ]
+        },
+        "output": {
+            
+              "$schema": "http://json-schema.org/draft-04/schema#",
+              "type": "object",
+              "properties": {
+                "matching_persons": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "first_name": {
+                          "type": "string"
+                        },
+                        "last_name": {
+                          "type": "string"
+                        },
+                        "phone": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "first_name",
+                        "last_name",
+                        "phone",
+                        "email"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "matching_persons"
+              ]
+            
+        }
+    }
+
 def get_discover_me_metadata():
     return {
         "schemaName": "ngina-metadata.0.9",
@@ -335,6 +446,19 @@ def get_discover_me_metadata():
             "images": {"type": "array", "description": "Ergebnisse, die geliefert werden sollen" }
         }
     }
+
+# ----------- crm lookup -------------------
+@router.head("/crm-lookup")
+async def head_crm_lookup_endpoint():
+    return Response(headers={"x-alive": "true"})
+
+@router.get("/crm-lookup")
+async def get_crm_lookup_metadata_endpoint():
+    return get_crm_lookup_metadata()
+
+@router.post("/crm-lookup")
+async def post_crm_lookup_endpoint(request: Dict[str, Any]):
+    return await get_crm_lookup_response()
 
 # ---------- real estate db lookup  ----------
 
