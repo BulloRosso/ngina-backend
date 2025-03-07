@@ -19,3 +19,8 @@ class BuildContextRequest(BaseModel):
 class ContextResponse(RootModel):
     """Response model containing agent contexts indexed by agent ID."""
     root: Dict[str, AgentContext]
+
+class PromptToJsonRequest(BaseModel):
+    """Request model for prompt to JSON conversion."""
+    prompt: str
+    one_shot: bool = True

@@ -7,6 +7,9 @@ from supabase import create_client
 import logging
 from pydantic import UUID4
 import os
+import json
+from pathlib import Path
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,7 @@ class ContextService:
             supabase_key=os.getenv("SUPABASE_KEY")
         )
         self.agent_service = AgentService()
+        self.openai_client = OpenAI()
 
     async def build_context(self, agent_chain: List[str]) -> Dict[str, AgentContext]:
         """
@@ -111,3 +115,135 @@ class ContextService:
         except Exception as e:
             logger.error(f"Error getting context by run ID: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to get context: {str(e)}")
+
+    def load_prompt_template(self) -> str:
+        """Load the prompt-to-json template from file."""
+        try:
+            prompt_path = Path("prompts/prompt-to-json.md")
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Failed to load prompt template: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to load prompt template"
+            )
+
+    def validate_required_fields(self, schema: Dict[str, Any], data: Dict[str, Any]) -> List[str]:
+        """
+        Validate that all required fields are present in the generated JSON.
+
+        Args:
+            schema: The JSON schema
+            data: The JSON data to validate
+
+        Returns:
+            A list of missing required field names
+        """
+        missing_fields = []
+
+        # Check if schema has a properties field (JSON Schema)
+        if "properties" in schema and "required" in schema:
+            # Standard JSON Schema format
+            for field in schema["required"]:
+                if field not in data:
+                    missing_fields.append(field)
+        else:
+            # Custom schema format (key-value pairs where each key is a field)
+            for field_name, field_schema in schema.items():
+                # Check if field is required
+                is_required = False
+
+                # Different ways to determine if a field is required
+                if isinstance(field_schema, dict):
+                    # Field schema is a dictionary with potential "required" property
+                    is_required = field_schema.get("required", False)
+                elif hasattr(field_schema, "required") and field_schema.required:
+                    # Field schema is an object with a "required" attribute
+                    is_required = True
+
+                if is_required and field_name not in data:
+                    missing_fields.append(field_name)
+
+        return missing_fields
+    
+    async def prompt_to_json(self, agent_id: str, user_prompt: str, one_shot: bool = True) -> Dict[str, Any]:
+        """
+        Convert a user prompt to JSON based on an agent's input schema.
+
+        Args:
+            agent_id: The agent ID
+            user_prompt: The user's prompt
+            one_shot: Whether to use one-shot learning
+
+        Returns:
+            The generated JSON object
+        """
+        try:
+            # Get agent details
+            agent = await self.agent_service.get_agent(agent_id)
+
+            if not agent.input:
+                raise HTTPException(status_code=400, detail="Agent doesn't have an input schema defined")
+
+            # Load the prompt template
+            prompt_template = self.load_prompt_template()
+
+            # Format the prompt with agent input schema and examples
+            formatted_prompt = prompt_template.replace("<agent.input>", json.dumps(agent.input, indent=2))
+
+            # Add input example if available and one_shot is True
+            if one_shot and agent.input_example:
+                formatted_prompt = formatted_prompt.replace(
+                    "<agent.input_example if not empty>", 
+                    json.dumps(agent.input_example, indent=2)
+                )
+            else:
+                formatted_prompt = formatted_prompt.replace("<agent.input_example if not empty>", "")
+
+            # Call the OpenAI API
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": formatted_prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ],
+                temperature=0.2  # Lower temperature for more deterministic outputs
+            )
+
+            # Extract the response text
+            response_text = response.choices[0].message.content.strip()
+
+            # Parse the response as JSON
+            try:
+                json_response = json.loads(response_text)
+
+                # Validate that all required fields are present
+                missing_fields = self.validate_required_fields(agent.input, json_response)
+
+                if missing_fields:
+                    logger.warning(f"Missing required fields in generated JSON: {missing_fields}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Generated JSON is missing required fields: {', '.join(missing_fields)}"
+                    )
+
+                return json_response
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM response as JSON: {response_text}")
+                raise HTTPException(
+                    status_code=422, 
+                    detail="LLM generated invalid JSON. Please try again with a more specific prompt."
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error in prompt to JSON conversion: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to convert prompt to JSON: {str(e)}")

@@ -1,9 +1,10 @@
 # api/v1/context.py
 from fastapi import APIRouter, HTTPException, Header, Depends
 from typing import Dict, Any, Optional
-from models.context import BuildContextRequest, AgentContext
+from models.context import BuildContextRequest, AgentContext, PromptToJsonRequest
 from services.context import ContextService
 import logging
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -45,3 +46,21 @@ async def get_context_by_run_id(
     """
     service = ContextService()
     return await service.get_context_by_run_id(run_id, x_ngina_key)
+
+@router.post("/prompt-to-json/{agent_id}", 
+             response_class=JSONResponse,
+             summary="Convert prompt to JSON", 
+             description="Convert a user prompt to JSON based on an agent's input schema", 
+             responses={
+                200: {"description": "Prompt successfully converted to JSON with all required fields"},
+                400: {"description": "Invalid agent ID, missing input schema, or JSON missing required fields"},
+                422: {"description": "Failed to parse LLM response as JSON"},
+                500: {"description": "Server error during prompt conversion"}
+             })
+async def prompt_to_json(agent_id: str, request: PromptToJsonRequest):
+    """
+    Convert a user prompt to JSON based on an agent's input schema.
+    """
+    service = ContextService()
+    result = await service.prompt_to_json(agent_id, request.prompt, request.one_shot)
+    return JSONResponse(content=result)
