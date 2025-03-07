@@ -14,6 +14,7 @@ class OperationBase(BaseModel):
     agent_id: Optional[UUID4] = None
     results: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
+    prompt: Optional[str] = None
     sum_credits: Optional[int] = 0
     workflow_id: Optional[str] = None
     finished_at: Optional[datetime] = None

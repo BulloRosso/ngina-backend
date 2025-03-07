@@ -24,6 +24,7 @@ class AgentBase(BaseModel):
     authentication: Optional[str] = None
     icon_svg: Optional[str] = None
     image_url: Optional[str] = None
+    task_prompt: Optional[str] = None
     max_execution_time_secs: Optional[int] = None
     agent_endpoint: Optional[str] = None
     type: Optional[str] = "atom"
