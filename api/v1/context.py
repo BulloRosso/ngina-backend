@@ -1,5 +1,5 @@
 # api/v1/context.py
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException, Header, Depends, Response
 from typing import Dict, Any, Optional
 from models.context import BuildContextRequest, AgentContext, PromptToJsonRequest
 from services.context import ContextService
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/context", tags=["context"])
 
 @router.post("/builder", 
-             response_model=Dict[str, AgentContext], 
+             response_model=str, 
              summary="Build agent context", 
              description="Build context information for a chain of agents", 
              responses={
@@ -21,11 +21,16 @@ router = APIRouter(prefix="/context", tags=["context"])
              })
 async def build_context(request: BuildContextRequest):
     """
-    Build and return context information for a chain of agents.
+    Return the ES6 transformer function
     """
     service = ContextService()
-    return await service.build_context(request.agentChain)
+    transformer_function = await service.build_context(request.agentChain)
 
+    return Response(
+        content=transformer_function,
+        media_type="application/javascript"
+    )
+    
 @router.get("/{run_id}", 
             response_model=Dict[str, AgentContext], 
             summary="Get context by run ID", 

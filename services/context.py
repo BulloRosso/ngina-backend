@@ -22,7 +22,7 @@ class ContextService:
         self.agent_service = AgentService()
         self.openai_client = OpenAI()
 
-    async def build_context(self, agent_chain: List[str]) -> Dict[str, AgentContext]:
+    async def build_context(self, agent_chain: List[str]) -> str:
         """
         Build and return context information for a chain of agents.
 
@@ -54,12 +54,81 @@ class ContextService:
 
                 context_dict[str(agent.id)] = agent_context
 
-            return context_dict
+            # Prepare context_dict for the LLM with renamed fields
+            llm_context_dict = {}
+            for agent_id, agent_context in context_dict.items():
+                llm_context_dict[agent_id] = {
+                    "prompt": agent_context.prompt,
+                    "title": agent_context.title,
+                    "description": agent_context.description,
+                    "input": agent_context.input,
+                    "input_data": agent_context.input_example,  # renamed from input_example
+                    "output": agent_context.output,
+                    "output_data": agent_context.output_example  # renamed from output_example
+                }
+
+            # Load the prompt template
+            try:
+                prompt_path = Path("prompts/transformer-function-builder.txt")
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    prompt_template = f.read()
+            except Exception as e:
+                logger.error(f"Failed to load transformer function builder template: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to load transformer function builder template"
+                )
+
+            # Format the prompt
+            formatted_prompt = prompt_template.replace("<context_dict>", json.dumps(llm_context_dict, indent=2))
+            formatted_prompt = formatted_prompt.replace("<user input>", "Create a function getInputDto(context) for the last agent in the chain")
+
+            # Call the OpenAI API with a reasoning model (medium efforts)
+            response = self.openai_client.chat.completions.create(
+                model="o3-mini-2025-01-31",
+                messages=[
+                    {
+                        "role": "developer",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": formatted_prompt
+                            }
+                        ]
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Create a function \"getInputDto()\" for agent " + agent_chain[-1]
+                            }
+                        ]
+                    }
+                ],
+                response_format={"type": "text"},
+                reasoning_effort="medium"
+            )
+
+            # Extract the response text
+            transformer_function = response.choices[0].message.content.strip()
+
+            # Check if the response is JSON-encoded (surrounded by quotes and contains escaped newlines)
+            if (transformer_function.startswith('"') and transformer_function.endswith('"') and "\\n" in transformer_function):
+                # This is likely a JSON-encoded string, so decode it
+                try:
+                    transformer_function = json.loads(transformer_function)
+                except json.JSONDecodeError:
+                    # If it fails to decode, keep it as is
+                    pass
+                        
+            # Return just the transformer function as plain text
+            return transformer_function
 
         except Exception as e:
             logger.error(f"Error building context: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to build context: {str(e)}")
-
+            
     async def get_context_by_run_id(self, run_id: str, x_ngina_key: Optional[str] = None) -> Dict[str, AgentContext]:
         """
         Get context information for a specific run ID.
