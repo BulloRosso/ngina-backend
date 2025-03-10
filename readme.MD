@@ -40,6 +40,10 @@ When the API service powers up, it shows the API documentation page:
 
 ![nginA API catalog](/docs/backend-api-doc.jpg)
 
+This API provides the following main building blocks:
+
+![API structure overview](/docs/api-overview.jpg)
+
 ### Authentication
 Supabase provides the authentication subsystem which is extended by
 several nginA API methods.
