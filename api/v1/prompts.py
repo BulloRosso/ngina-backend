@@ -138,3 +138,14 @@ async def compare_prompts(prompt_name: str, version1: int, version2: int):
 async def activate_prompt(prompt_name: str, version: int):
     service = PromptService()
     return await service.activate_prompt(prompt_name, version)
+
+@router.post("/replace/{prompt_name}/{version}", response_model=Prompt, summary="Force replace prompt text",
+     description="Replace the text of an existing prompt version",
+     responses={
+         200: {"description": "Prompt text replaced successfully"},
+         404: {"description": "Prompt version not found"},
+         500: {"description": "Server error"}
+     })
+async def replace_prompt_text(prompt_name: str, version: int, prompt_data: Dict[str, Any] = Body(...)):
+    service = PromptService()
+    return await service.replace_prompt_text(prompt_name, version, prompt_data.get("prompt_text"))

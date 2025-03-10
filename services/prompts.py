@@ -296,7 +296,52 @@ class PromptService:
         except Exception as e:
             logger.error(f"Error activating prompt: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to activate prompt: {str(e)}")
+    
+    async def replace_prompt_text(self, name: str, version: int, prompt_text: str) -> Prompt:
+        """Replace the text of an existing prompt without creating a new version"""
+        try:
+            # First, find the prompt by name and version
+            result = self.supabase.table("prompts") \
+                .select("*") \
+                .eq("name", name) \
+                .eq("version", version) \
+                .limit(1) \
+                .execute()
 
+            if not result.data:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Prompt not found for name: {name} and version: {version}"
+                )
+
+            # Get the prompt ID
+            prompt_id = result.data[0]["id"]
+
+            # Update only the prompt_text field
+            update_result = self.supabase.table("prompts") \
+                .update({"prompt_text": prompt_text}) \
+                .eq("id", prompt_id) \
+                .execute()
+
+            if not update_result.data:
+                raise HTTPException(status_code=500, detail="Failed to update prompt text")
+
+            return Prompt.model_validate(update_result.data[0])
+
+        except ValidationError as e:
+            logger.error(f"Validation error: {str(e)}")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Data validation error: {str(e)}"
+            )
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise
+            logger.error(f"Error replacing prompt text: {str(e)}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to replace prompt text: {str(e)}"
+            )
     async def _deactivate_prompt_group(self, name: str) -> None:
         """Helper method to deactivate all prompts in a group"""
         try:
