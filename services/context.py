@@ -101,7 +101,7 @@ class ContextService:
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Create a function \"getInputDto()\" for agent " + agent_chain[-1]
+                                "text": "Create a function \"transform_input(context)\" for agent " + agent_chain[-1]
                             }
                         ]
                     }
