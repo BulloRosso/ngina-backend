@@ -15,6 +15,7 @@ class OperationBase(BaseModel):
     results: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
     prompt: Optional[str] = None
+    execution_id: Optional[str] = None
     sum_credits: Optional[int] = 0
     workflow_id: Optional[str] = None
     finished_at: Optional[datetime] = None
