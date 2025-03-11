@@ -3,7 +3,7 @@ This is the nginA API backend based on
 * Python
 * FastAPI/Pydantic
 
-![Splash screen](/docs/splash-screen.jpg)
+<img src="/docs/splash-screen.jpg" width="500">
 
 More about the origins of ngina: [background story on LinkedIn](https://www.linkedin.com/pulse/5-challenges-agentaiand-how-inspired-me-build-better-content-g%C3%B6llner-l7jrf)
 
@@ -21,7 +21,7 @@ nginA is a wrapper around n8n to execute agentic workflows. It was
 written to enable self-hosted workflows which are compliant to
 EU regulations (e. g. hostend on EU servers).
 
-![High level overview](/docs/high-level-overview.jpg)
+<img src="/docs/high-level-overview.jpg" width="500">
 
 All data is stored in a Supabase instance:
 * nginA objects
