@@ -48,6 +48,13 @@ This API provides the following main building blocks:
 Supabase provides the authentication subsystem which is extended by
 several nginA API methods.
 
+To be able to distinguish between customers and you (the developer) we must use RBAC which adds
+some complexity to our setup (for security's sake). 
+
+![Supabase JWT with claims](/docs/auth-hook.jpg)
+
+The necessary steps are described here: [nginA RBAC](docs/rbac.MD)
+
 ### Credential Store
 Supabase provides the secure credential store via the PostgreSQL vault
 extension. nginA provides API methods for credential management - these
