@@ -51,7 +51,7 @@ several nginA API methods.
 To be able to distinguish between customers and you (the developer) we must use RBAC which adds
 some complexity to our setup (for security's sake). 
 
-![Supabase JWT with claims](/docs/auth-hook.jpg)
+<img src="/docs/auth-hook.jpg" width="380">
 
 The necessary steps are described here: [nginA RBAC](docs/rbac.MD)
 
