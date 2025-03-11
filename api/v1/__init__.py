@@ -14,6 +14,7 @@ from .scratchpads import router as scratchpads_router
 from .context import router as context_router
 from .prompts import router as prompts_router
 from .dashboards import router as dashboards_router
+from .dashboard_components import router as dashboard_components_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
@@ -30,3 +31,4 @@ router.include_router(scratchpads_router)
 router.include_router(context_router)
 router.include_router(prompts_router)
 router.include_router(dashboards_router)
+router.include_router(dashboard_components_router)

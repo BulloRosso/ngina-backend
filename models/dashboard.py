@@ -36,44 +36,6 @@ class Dashboard(DashboardBase):
     id: UUID4
     created_at: datetime
 
-class DashboardComponentBase(BaseModel):
-    name: Optional[str] = None
-    type: Optional[str] = None
-    layout_cols: Optional[int] = 2
-    layout_rows: Optional[int] = 2
-    react_component_name: Optional[str] = None
-
-    # Add this to make Pydantic more forgiving with type conversion
-    model_config = ConfigDict(
-        from_attributes=True,
-        extra='ignore',  # Ignore extra fields
-        str_strip_whitespace=True,  # Strip whitespace from strings
-        validate_assignment=True,  # Validate on attribute assignment
-        validate_default=True,  # Validate default values
-        # Make UUID validation use strict=False
-        json_schema_extra={
-            'uuid_format': 'non-strict'
-        }
-    )
-
-class DashboardComponentCreate(DashboardComponentBase):
-    pass
-
-class DashboardComponent(DashboardComponentBase):
-    model_config = ConfigDict(
-        from_attributes=True,
-        extra='ignore',  # Ignore extra fields
-        str_strip_whitespace=True,  # Strip whitespace from strings
-        validate_assignment=True,  # Validate on attribute assignment
-        validate_default=True,  # Validate default values
-        # Make UUID validation use strict=False
-        json_schema_extra={
-            'uuid_format': 'non-strict'
-        }
-    )
-
-    id: UUID4
-    created_at: datetime
 
 
 
