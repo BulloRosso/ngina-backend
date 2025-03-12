@@ -51,6 +51,7 @@ app.add_middleware(
         frontend_url,
         "https://*.replit.dev",
         "https://ngina.replit.app"],
+    allow_origin_regex=r"https://.*\.replit\.dev",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

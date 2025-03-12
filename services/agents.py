@@ -180,72 +180,17 @@ class AgentService:
                     detail="Agent doesn't have an endpoint configured"
                 )
 
-            # Validate that all required input fields are present and have correct types
-            if agent.input:
-                for field_name, schema in agent.input.items():
-                    if field_name not in test_data.input:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Missing required input field: {field_name}"
-                        )
-
-                    # Type validation
-                    field_value = test_data.input[field_name]
-                    expected_type = schema.type.lower()
-
-                    # Validate number type
-                    if expected_type == 'number':
-                        try:
-                            if isinstance(field_value, str):
-                                # Try to convert string to float
-                                test_data.input[field_name] = float(field_value)
-                            elif not isinstance(field_value, (int, float)):
-                                raise ValueError
-                        except ValueError:
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"Field '{field_name}' must be a number, got: {field_value}"
-                            )
-
-                    # Validate text type
-                    elif expected_type == 'text':
-                        if not isinstance(field_value, str):
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"Field '{field_name}' must be a string, got: {type(field_value).__name__}"
-                            )
-
-                    # Validate array type
-                    elif expected_type == 'array':
-                        if not isinstance(field_value, list):
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"Field '{field_name}' must be an array, got: {type(field_value).__name__}"
-                            )
-
-                    # Validate boolean type
-                    elif expected_type == 'boolean':
-                        if not isinstance(field_value, bool):
-                            if isinstance(field_value, str):
-                                # Try to convert string to boolean
-                                value_lower = field_value.lower()
-                                if value_lower in ('true', 'false'):
-                                    test_data.input[field_name] = value_lower == 'true'
-                                else:
-                                    raise HTTPException(
-                                        status_code=400,
-                                        detail=f"Field '{field_name}' must be a boolean, got: {field_value}"
-                                    )
-                            else:
-                                raise HTTPException(
-                                    status_code=400,
-                                    detail=f"Field '{field_name}' must be a boolean, got: {type(field_value).__name__}"
-                                )
-
             logger.info(f"Sending validated test data to agent endpoint: {agent.agent_endpoint}")
 
             # Make the request to the agent endpoint
             async with httpx.AsyncClient() as client:
+                
+                endpoint = agent.agent_endpoint
+                if "/wrapper/" in endpoint:
+                    endpoint = agent.workflow_id
+
+                logger.info(f"*** ENDPOINT {endpoint}")
+                
                 try:
                     logger.info(f"Calling agent endpoint {agent.agent_endpoint} with data {test_data.input}")
 
@@ -267,23 +212,8 @@ class AgentService:
                     response.raise_for_status()
 
                     # Try to parse the response as JSON
-                    try:
-                        result = response.json()
-                    except ValueError:
-                        raise HTTPException(
-                            status_code=422,
-                            detail=f"Agent returned invalid JSON response: {response.text[:200]}"
-                        )
-
-                    # Validate the response against the agent's output schema if defined
-                    if agent.output:
-                        for field_name, schema in agent.output.items():
-                            if field_name not in result:
-                                raise HTTPException(
-                                    status_code=422,
-                                    detail=f"Agent response missing required output field: {field_name}"
-                                )
-
+                    result = response.json()
+                    
                     return result
 
                 except httpx.TimeoutException:
