@@ -67,10 +67,10 @@ async def validate_wrapper_agent(agent_id: str):
             )
 
         # Check if the wrapper has a workflow_id (target URL)
-        if not agent.get("workflow_id"):
+        if not agent.get("wrapped_url"):
             raise HTTPException(
                 status_code=400,
-                detail="Wrapper agent doesn't have a target URL configured"
+                detail="Wrapper agent doesn't have a wrapped URL configured"
             )
 
         return agent
@@ -674,8 +674,8 @@ async def post_wrapper_endpoint(request: Request, agent_id: str = Path(...)):
     # Validate and get agent data
     agent = await validate_wrapper_agent(agent_id)
 
-    # Get the target URL from workflow_id
-    target_url = agent.get("workflow_id")
+    # Get the target URL from wrapped_url
+    target_url = agent.get("wrapped_url")
 
     # Get request body
     request_body = await request.json()

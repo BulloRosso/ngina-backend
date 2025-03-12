@@ -333,6 +333,7 @@ class OperationService:
 
                     # Check if the agent already has a workflow_id
                     existing_workflow_id = agent.get("workflow_id")
+                    logger.info("Existing workflow ID: %s", existing_workflow_id)
                     if not existing_workflow_id:
                         # Create a new workflow in n8n only if the agent doesn't have a workflow_id
                         try:

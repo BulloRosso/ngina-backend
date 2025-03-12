@@ -97,5 +97,14 @@ Deploy the React frontend to a static website app.
 #### Python Backend API
 Create a Docker image and deploy the Docker image to AKS.
 
+## Integrated Diagnostics endpoint
+The API features a streaming diagnostics endpoint to validate the current installation
+at any time (also in production): GET /api/v1/diagnostics
+
+<img src="/docs/diagnostics-output.jpg" width="500">
+
+Just lean back and watch the tests scrolling by - for advanced automation this endpoint
+returns **http status** 200 if all tests passed and 500 if there were errors.
+
 ## The Frontend
 [React/Vite/Mui Frontend](https://github.com/BulloRosso/nginA-Frontend)

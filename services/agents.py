@@ -90,7 +90,7 @@ class AgentService:
                 "workflow_id": agent_data.get("workflow_id"),
                 "stars": agent_data.get("stars", 0),
                 "icon_svg": agent_data.get("icon_svg"),
-                "image_url": agent_data.get("image_url"),
+                "wrapped_url": agent_data.get("wrapped_url"),
                 "max_execution_time_secs": agent_data.get("max_execution_time_secs"),
                 "agent_endpoint": agent_data.get("agent_endpoint")
             }
@@ -375,7 +375,7 @@ class AgentService:
                 "authentication": agent.authentication,
                 "type": agent.type or "atom",
                 "icon_svg": agent.icon_svg,
-                "image_url": agent.image_url,
+                "wrapped_url": agent.wrapped_url,
                 "max_execution_time_secs": agent.max_execution_time_secs,
                 "agent_endpoint": agent.agent_endpoint
             }
