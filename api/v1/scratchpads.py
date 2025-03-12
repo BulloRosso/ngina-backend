@@ -73,7 +73,8 @@ async def upload_files(
     user_id: UUID,
     run_id: UUID,
     agent_id: UUID,
-    current_user: UUID = Depends(get_current_user_dependency)
+    current_user: UUID = Depends(get_current_user_dependency),
+    file: UploadFile = File(...)  # Explicitly require a file
 ):
     """Upload files to the scratchpad"""
     # Super detailed logging
@@ -82,15 +83,7 @@ async def upload_files(
     logger.info(f"Method: {request.method}")
     logger.info(f"Path params: user_id={user_id}, run_id={run_id}, agent_id={agent_id}")
     logger.info(f"Current user: {current_user}")
-
-    # Log request headers
-    logger.info(f"Request headers:")
-    for header_name, header_value in request.headers.items():
-        logger.info(f"  {header_name}: {header_value}")
-
-    # Check content type
-    content_type = request.headers.get("content-type", "")
-    logger.info(f"Content-Type: {content_type}")
+    logger.info(f"File: {file.filename}, size: {file.size if hasattr(file, 'size') else 'unknown'}")
 
     # Verify user authentication
     if str(current_user) != str(user_id):
@@ -100,66 +93,63 @@ async def upload_files(
             detail="You can only upload files to your own scratchpad"
         )
 
-    # Get the raw body for debugging if there's an issue
-    try:
-        body = await request.body()
-        logger.info(f"Request body size: {len(body)} bytes")
-        # If small enough, log part of it for debugging
-        if len(body) < 1000:
-            logger.info(f"Request body preview: {body[:100]}")
-    except Exception as e:
-        logger.error(f"Failed to read request body: {str(e)}")
-
-    # Try to process the form data manually
-    try:
-        # Get the form data
-        form = await request.form()
-        logger.info(f"Form fields: {[key for key in form.keys()]}")
-
-        file_list = []
-        # Find any file fields and add them to the list
-        for field_name, field_value in form.items():
-            if isinstance(field_value, UploadFile):
-                logger.info(f"💾 Found file in form field '{field_name}': {field_value.filename}")
-                # Log file details
-                logger.info(f"  Filename: {field_value.filename}")
-                logger.info(f"  Content type: {field_value.content_type}")
-                # Try to get file size
-                try:
-                    size = 0
-                    chunk = await field_value.read(8192)
-                    while chunk:
-                        size += len(chunk)
-                        chunk = await field_value.read(8192)
-                    # Reset file position for later reading
-                    await field_value.seek(0)
-                    logger.info(f"  File size: {size} bytes")
-                except Exception as e:
-                    logger.error(f"  Error getting file size: {str(e)}")
-
-                file_list.append(field_value)
-            else:
-                logger.info(f"Form field '{field_name}': {field_value}")
-    except Exception as e:
-        logger.error(f"❌ Error processing form data: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to process form data: {str(e)}"
-        )
-
-    # Ensure we have at least one file
-    if not file_list:
-        logger.warning("❌ No files found in the request")
-        raise HTTPException(
-            status_code=400,
-            detail="No files provided for upload"
-        )
-
-    logger.info(f"✅ Found {len(file_list)} files to upload")
-
-    # Process the files
+    # Process the file directly
     service = ScratchpadService()
     try:
+        # Create a list with the single file
+        file_list = [file]
+        uploaded_files = await service.upload_files(user_id, run_id, agent_id, file_list)
+        logger.info(f"✅ Successfully uploaded {len(uploaded_files)} files")
+    except Exception as e:
+        logger.error(f"❌ Error uploading files: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading files: {str(e)}"
+        )
+
+    # Return a different response format for input files
+    if str(agent_id) == INPUT_AGENT_ID:
+        return {
+            "message": f"Successfully uploaded {len(uploaded_files)} input files",
+            "run_id": str(run_id),
+            "files": uploaded_files
+        }
+    else:
+        return {
+            "message": f"Successfully uploaded {len(uploaded_files)} files",
+            "run_id": str(run_id),
+            "agent_id": str(agent_id),
+            "files": [file.filename for file in uploaded_files]
+        }
+
+@router.post("/{user_id}/{run_id}/{agent_id}/files")
+async def upload_files_auth(
+    user_id: UUID,
+    run_id: UUID,
+    agent_id: UUID,
+    current_user: UUID = Depends(get_current_user_dependency),
+    file: UploadFile = File(...)  # Explicitly require a file
+):
+    """Upload files to the scratchpad with user JWT authentication"""
+    # Log request information
+    logger.info(f"⭐ FILES UPLOAD REQUEST RECEIVED ⭐")
+    logger.info(f"Path params: user_id={user_id}, run_id={run_id}, agent_id={agent_id}")
+    logger.info(f"Current user: {current_user}")
+    logger.info(f"File: {file.filename}, content-type: {file.content_type}")
+
+    # Verify user authentication
+    if str(current_user) != str(user_id):
+        logger.warning(f"⚠️ User mismatch: current_user={current_user}, user_id={user_id}")
+        raise HTTPException(
+            status_code=403,
+            detail="You can only upload files to your own scratchpad"
+        )
+
+    # Process the file
+    service = ScratchpadService()
+    try:
+        # Create a list with the single file
+        file_list = [file]
         uploaded_files = await service.upload_files(user_id, run_id, agent_id, file_list)
         logger.info(f"✅ Successfully uploaded {len(uploaded_files)} files")
     except Exception as e:

@@ -503,3 +503,123 @@ class ScratchpadService:
                 status_code=500,
                 detail=f"Failed to upload system JSON: {str(e)}"
             )
+
+    async def upload_files(self, user_id: UUID, run_id: UUID, agent_id: UUID, files: List[UploadFile]) -> List[ScratchpadFile]:
+        """Upload files to the scratchpad"""
+        uploaded_files = []
+    
+        try:
+            for file in files:
+                # Make sure file is valid
+                if not file or not file.filename:
+                    logger.warning(f"Skipping invalid file: {file}")
+                    continue
+    
+                # Log file details
+                logger.info(f"Processing file for upload: {file.filename}, content-type: {file.content_type}")
+    
+                # Construct file path in storage
+                file_path = f"{user_id}/{run_id}/{agent_id}/{file.filename}"
+    
+                # Read file content - make sure to reset position first
+                await file.seek(0)
+                content = await file.read()
+    
+                if not content:
+                    logger.warning(f"Empty content for file {file.filename}")
+                    continue
+    
+                # Log content size
+                logger.info(f"File content size: {len(content)} bytes")
+    
+                # Upload file to Supabase storage
+                result = self.supabase.storage\
+                    .from_(self.bucket_name)\
+                    .upload(file_path, content, {"content-type": file.content_type})
+    
+                if isinstance(result, dict) and "error" in result:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to upload file {file.filename}: {result['error']}"
+                    )
+    
+                # Create signed URL (valid for 1 hour)
+                signed_url_result = self.supabase.storage\
+                    .from_(self.bucket_name)\
+                    .create_signed_url(file_path, 3600)
+    
+                if isinstance(signed_url_result, dict) and "error" in signed_url_result:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to create signed URL for {file.filename}: {signed_url_result['error']}"
+                    )
+    
+                # Extract URL correctly based on response structure
+                url = None
+                if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
+                    url = signed_url_result["signedURL"]
+                else:
+                    # Try to find the URL in a different format
+                    url = str(signed_url_result)
+    
+                # Create metadata record with string UUIDs
+                metadata = {
+                    "user_id": str(user_id),
+                    "run_id": str(run_id),
+                    "url": url,
+                    "created_at": datetime.now().isoformat()
+                }
+    
+                # Insert record into scratchpad_files table
+                file_record = {
+                    "user_id": str(user_id),
+                    "run_id": str(run_id),
+                    "agent_id": str(agent_id),
+                    "filename": file.filename,
+                    "path": file_path,
+                    "metadata": metadata
+                }
+    
+                result = self.supabase.table("scratchpad_files")\
+                    .insert(file_record)\
+                    .execute()
+    
+                if not result.data:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to store metadata for {file.filename}"
+                    )
+    
+                # Create a ScratchpadFile from the result data
+                try:
+                    # Convert the metadata back to ScratchpadFileMetadata for the response
+                    result_data = result.data[0]
+                    metadata_obj = ScratchpadFileMetadata(
+                        user_id=user_id,
+                        run_id=run_id,
+                        url=url,
+                        created_at=datetime.fromisoformat(metadata["created_at"]) if isinstance(metadata["created_at"], str) else metadata["created_at"]
+                    )
+    
+                    # Update the metadata in the result data before validation
+                    result_data["metadata"] = metadata_obj.model_dump()
+    
+                    # Validate the complete object
+                    scratchpad_file = ScratchpadFile.model_validate(result_data)
+                    uploaded_files.append(scratchpad_file)
+                    logger.info(f"Successfully uploaded and registered file: {file.filename}")
+                except Exception as validation_error:
+                    logger.error(f"Error validating result data: {str(validation_error)}")
+                    # Continue with the next file even if validation fails for this one
+                    continue
+    
+            return uploaded_files
+    
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error uploading files: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload files: {str(e)}"
+            )
