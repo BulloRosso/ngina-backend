@@ -76,7 +76,7 @@ Install the
 Subscribe to render.com and pull the latest n8n Docker image.
 Set the environment variables to point to the Supabase instance:
 
-![Docker environment variables](/docs/render-com-params-n8n-anonymous.jpg)
+<img src="/docs/render-com-params-n8n-anonymous.jpg" width="600">
 
 Please enter "n8n" as schema name (instead of public).
 
