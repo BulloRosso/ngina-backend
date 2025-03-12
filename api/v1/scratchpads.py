@@ -1,31 +1,22 @@
 # api/v1/scratchpads.py
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form, Header, Body
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form, Header, Body, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from dependencies.auth import get_current_user_dependency
-from models.scratchpad import ScratchpadFile, ScratchpadFiles, ScratchpadFileResponse, ScratchpadFileMetadata
-from supabase import create_client, Client
-import httpx
-import json
-import re
-from urllib.parse import urlparse, parse_qs
+from models.scratchpad import ScratchpadFile, ScratchpadFiles, ScratchpadFileResponse
+from services.scratchpads import ScratchpadService, INPUT_AGENT_ID
+from starlette.requests import Request
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/scratchpads", tags=["scratchpads"])
 security = HTTPBearer()
 
-# Initialize Supabase client
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
+# Get API key from environment
 ngina_scratchpad_key = os.getenv("NGINA_SCRATCHPAD_KEY")
-
-def get_supabase_client() -> Client:
-    """Create and return a Supabase client instance"""
-    return create_client(supabase_url, supabase_key)
 
 async def get_api_key(x_ngina_key: Optional[str] = Header(None)) -> str:
     """Validate the API key for service-to-service communication"""
@@ -35,511 +26,6 @@ async def get_api_key(x_ngina_key: Optional[str] = Header(None)) -> str:
             detail="Invalid or missing API key"
         )
     return x_ngina_key
-
-def is_url_expired(url: str, threshold_minutes: int = 5) -> bool:
-    """
-    Check if a Supabase Storage URL's SAS token is expired or about to expire
-
-    Args:
-        url: The signed URL to check
-        threshold_minutes: Number of minutes before expiration to consider a URL as "expired"
-
-    Returns:
-        bool: True if the URL is expired or will expire soon, False otherwise
-    """
-    try:
-        # Parse the URL
-        parsed_url = urlparse(url)
-        query_params = parse_qs(parsed_url.query)
-
-        # Extract the expiry parameter (usually 'se' in SAS tokens)
-        if 'se' not in query_params:
-            return True  # No expiry parameter found, consider expired
-
-        # Parse the expiry timestamp
-        expiry_timestamp = int(query_params['se'][0])
-        expiry_time = datetime.fromtimestamp(expiry_timestamp)
-
-        # Calculate the threshold time
-        current_time = datetime.now()
-        threshold_time = current_time + timedelta(minutes=threshold_minutes)
-
-        # Check if the URL will expire within the threshold
-        return expiry_time <= threshold_time
-
-    except Exception as e:
-        logger.error(f"Error checking URL expiration: {str(e)}")
-        return True  # Consider expired on error
-
-class ScratchpadService:
-    def __init__(self):
-        self.supabase = get_supabase_client()
-        self.bucket_name = "runtimeresults"
-
-    async def get_scratchpad_files(self, run_id: UUID, user_id: UUID) -> ScratchpadFiles:
-        """Get all files for a specific run_id, grouped by agent_id"""
-        try:
-            # Query the scratchpad_files table for matching run_id and user_id
-            result = self.supabase.table("scratchpad_files")\
-                .select("*")\
-                .eq("run_id", str(run_id))\
-                .eq("user_id", str(user_id))\
-                .execute()
-
-            if not result.data:
-                return ScratchpadFiles()
-
-            # Group files by agent_id
-            files_by_agent = {}
-            for file_data in result.data:
-                agent_id = UUID(file_data.get("agent_id"))
-
-                # Get the file path for creating a fresh signed URL
-                file_path = file_data.get("path")
-
-                # Check if the URL is expired or will expire soon
-                current_url = file_data.get("metadata", {}).get("url", "")
-                fresh_url = current_url
-
-                # Refresh the URL if needed
-                try:
-                    if is_url_expired(current_url):
-                        # Create a new signed URL (valid for 1 hour)
-                        signed_url_result = self.supabase.storage\
-                            .from_(self.bucket_name)\
-                            .create_signed_url(file_path, 3600)
-
-                        if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
-                            fresh_url = signed_url_result["signedURL"]
-                        else:
-                            fresh_url = str(signed_url_result)
-
-                        # Update the URL in the metadata
-                        metadata = file_data.get("metadata", {})
-                        metadata["url"] = fresh_url
-                        file_data["metadata"] = metadata
-
-                    # Create the ScratchpadFile with the updated metadata
-                    scratchpad_file = ScratchpadFile.model_validate(file_data)
-
-                    if agent_id not in files_by_agent:
-                        files_by_agent[agent_id] = []
-
-                    files_by_agent[agent_id].append(scratchpad_file)
-
-                except Exception as file_error:
-                    # Log the error but continue processing other files
-                    logger.warning(f"Error refreshing URL for file {file_path}: {str(file_error)}")
-                    # Skip this file and continue with others
-                    # Optionally, you could add the file with the original URL instead
-
-                    # If you want to include the file with its original URL (might still be broken):
-                    try:
-                        scratchpad_file = ScratchpadFile.model_validate(file_data)
-                        if agent_id not in files_by_agent:
-                            files_by_agent[agent_id] = []
-                        files_by_agent[agent_id].append(scratchpad_file)
-                    except Exception:
-                        # If even that fails, just skip this file entirely
-                        pass
-
-            return ScratchpadFiles(files=files_by_agent)
-
-        except Exception as e:
-            logger.error(f"Error retrieving scratchpad files: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to retrieve scratchpad files: {str(e)}"
-            )
-    async def upload_files(self, user_id: UUID, run_id: UUID, agent_id: UUID, files: List[UploadFile]) -> List[ScratchpadFile]:
-        uploaded_files = []
-
-        try:
-            for file in files:
-                # Construct file path in storage
-                file_path = f"{user_id}/{run_id}/{agent_id}/{file.filename}"
-
-                # Read file content
-                content = await file.read()
-
-                # Upload file to Supabase storage
-                result = self.supabase.storage\
-                    .from_(self.bucket_name)\
-                    .upload(file_path, content, {"content-type": file.content_type})
-
-                if isinstance(result, dict) and "error" in result:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to upload file {file.filename}: {result['error']}"
-                    )
-
-                # Create signed URL (valid for 1 hour)
-                signed_url_result = self.supabase.storage\
-                    .from_(self.bucket_name)\
-                    .create_signed_url(file_path, 3600)
-
-                if isinstance(signed_url_result, dict) and "error" in signed_url_result:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to create signed URL for {file.filename}: {signed_url_result['error']}"
-                    )
-
-                # Extract URL correctly based on response structure
-                url = None
-                if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
-                    url = signed_url_result["signedURL"]
-                else:
-                    # Try to find the URL in a different format
-                    url = str(signed_url_result)
-
-                # Create metadata record with string UUIDs instead of UUID objects
-                metadata = {
-                    "user_id": str(user_id),
-                    "run_id": str(run_id),
-                    "url": url,
-                    "created_at": datetime.now().isoformat()
-                }
-
-                # Insert record into scratchpad_files table
-                file_record = {
-                    "user_id": str(user_id),
-                    "run_id": str(run_id),
-                    "agent_id": str(agent_id),
-                    "filename": file.filename,
-                    "path": file_path,
-                    "metadata": metadata  # Now using the dictionary directly instead of model_dump()
-                }
-
-                result = self.supabase.table("scratchpad_files")\
-                    .insert(file_record)\
-                    .execute()
-
-                if not result.data:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to store metadata for {file.filename}"
-                    )
-
-                # Create a ScratchpadFile from the result data
-                try:
-                    # Convert the metadata back to ScratchpadFileMetadata for the response
-                    result_data = result.data[0]
-                    metadata_obj = ScratchpadFileMetadata(
-                        user_id=user_id,
-                        run_id=run_id,
-                        url=url,
-                        created_at=datetime.fromisoformat(metadata["created_at"]) if isinstance(metadata["created_at"], str) else metadata["created_at"]
-                    )
-
-                    # Update the metadata in the result data before validation
-                    result_data["metadata"] = metadata_obj.model_dump()
-
-                    # Validate the complete object
-                    scratchpad_file = ScratchpadFile.model_validate(result_data)
-                    uploaded_files.append(scratchpad_file)
-                except Exception as validation_error:
-                    logger.error(f"Error validating result data: {str(validation_error)}")
-                    # Continue with the next file even if validation fails for this one
-                    continue
-
-            return uploaded_files
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error uploading files: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to upload files: {str(e)}"
-            )
-
-    async def upload_files_system(self, run_id: UUID, agent_id: UUID, data: Any) -> Dict[str, Any]:
-        """Upload JSON data as a file to the scratchpad as a system operation"""
-        try:
-            # For system operations, we use a fixed user_id (could be a system user or a special UUID)
-            # This is a placeholder - adjust according to your system user ID strategy
-            system_user_id = UUID("00000000-0000-0000-0000-000000000000")
-
-            # Generate a filename for the JSON data
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"system_results_{timestamp}.json"
-
-            # Construct file path in storage
-            file_path = f"{system_user_id}/{run_id}/{agent_id}/{filename}"
-
-            # Convert data to JSON string
-            json_content = json.dumps(data)
-
-            # Upload file to Supabase storage
-            result = self.supabase.storage\
-                .from_(self.bucket_name)\
-                .upload(file_path, json_content, {"content-type": "application/json"})
-
-            if isinstance(result, dict) and "error" in result:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to upload file: {result['error']}"
-                )
-
-            # Create signed URL (valid for 1 hour)
-            signed_url_result = self.supabase.storage\
-                .from_(self.bucket_name)\
-                .create_signed_url(file_path, 3600)
-
-            if isinstance(signed_url_result, dict) and "error" in signed_url_result:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to create signed URL: {signed_url_result['error']}"
-                )
-
-            # Extract URL correctly based on response structure
-            url = None
-            if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
-                url = signed_url_result["signedURL"]
-            else:
-                # Try to find the URL in a different format
-                url = str(signed_url_result)
-
-            # Create metadata record
-            metadata = {
-                "user_id": str(system_user_id),
-                "run_id": str(run_id),
-                "url": url,
-                "created_at": datetime.now().isoformat()
-            }
-
-            # Insert record into scratchpad_files table
-            file_record = {
-                "user_id": str(system_user_id),
-                "run_id": str(run_id),
-                "agent_id": str(agent_id),
-                "filename": filename,
-                "path": file_path,
-                "metadata": metadata,
-                "system_generated": True  # Flag to indicate this was generated by the system
-            }
-
-            result = self.supabase.table("scratchpad_files")\
-                .insert(file_record)\
-                .execute()
-
-            if not result.data:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to store metadata for system results"
-                )
-
-            return {
-                "message": "Successfully uploaded system results",
-                "run_id": str(run_id),
-                "agent_id": str(agent_id),
-                "filename": filename,
-                "url": url
-            }
-
-        except Exception as e:
-            logger.error(f"Error uploading system files: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to upload system files: {str(e)}"
-            )
-
-    async def get_file_by_path(self, run_id: UUID, path: str, user_id: UUID) -> ScratchpadFileResponse:
-        """Get file metadata and URL by path"""
-        try:
-            # Extract agent_id and filename from path
-            path_parts = path.split('/')
-            if len(path_parts) < 2:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid path format. Expected: agent_id/filename"
-                )
-
-            agent_id = path_parts[0]
-            filename = '/'.join(path_parts[1:])  # In case filename contains slashes
-
-            # Query the database for the file
-            result = self.supabase.table("scratchpad_files")\
-                .select("*")\
-                .eq("run_id", str(run_id))\
-                .eq("user_id", str(user_id))\
-                .eq("agent_id", agent_id)\
-                .eq("filename", filename)\
-                .execute()
-
-            if not result.data:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"File not found: {path}"
-                )
-
-            file_data = result.data[0]
-            metadata = ScratchpadFileMetadata.model_validate(file_data["metadata"])
-
-            # Always generate a new signed URL to ensure it's fresh
-            # Generate a new signed URL (valid for 1 hour)
-            signed_url_result = self.supabase.storage\
-                .from_(self.bucket_name)\
-                .create_signed_url(file_data["path"], 3600)
-
-            if isinstance(signed_url_result, dict) and "error" in signed_url_result:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Failed to create signed URL: {signed_url_result['error']}"
-                )
-
-            if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
-                url = signed_url_result["signedURL"]
-            else:
-                url = str(signed_url_result)
-
-            # Update the metadata with the new URL (but don't store back to DB)
-            metadata.url = url
-
-            return ScratchpadFileResponse(
-                metadata=metadata,
-                url=url
-            )
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error retrieving file: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to retrieve file: {str(e)}"
-            )
-
-    async def delete_scratchpad(self, run_id: UUID, user_id: UUID) -> Dict[str, Any]:
-        """Delete all files for a specific run_id from storage and database"""
-        try:
-            # First, get all files for this run_id
-            result = self.supabase.table("scratchpad_files")\
-                .select("*")\
-                .eq("run_id", str(run_id))\
-                .eq("user_id", str(user_id))\
-                .execute()
-
-            if not result.data:
-                return {"message": f"No files found for run_id: {run_id}"}
-
-            # Delete files from storage
-            file_paths = [file_data["path"] for file_data in result.data]
-
-            for path in file_paths:
-                self.supabase.storage\
-                    .from_(self.bucket_name)\
-                    .remove([path])
-
-            # Delete metadata records
-            delete_result = self.supabase.table("scratchpad_files")\
-                .delete()\
-                .eq("run_id", str(run_id))\
-                .eq("user_id", str(user_id))\
-                .execute()
-
-            deleted_count = len(delete_result.data) if delete_result.data else 0
-
-            return {
-                "message": f"Successfully deleted scratchpad for run_id: {run_id}",
-                "deleted_files_count": deleted_count,
-                "run_id": str(run_id)
-            }
-
-        except Exception as e:
-            logger.error(f"Error deleting scratchpad: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to delete scratchpad: {str(e)}"
-            )
-
-    async def upload_json_system(self, user_id: UUID, run_id: UUID, agent_id: UUID, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Upload JSON data as a file for system operations"""
-        try:
-            # Generate a filename for the JSON data
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"system_results_{timestamp}.json"
-
-            # Construct file path in storage
-            file_path = f"{user_id}/{run_id}/{agent_id}/{filename}"
-
-            # Convert data to JSON string
-            import json
-            json_content = json.dumps(data)
-
-            # Upload file to Supabase storage
-            result = self.supabase.storage\
-                .from_(self.bucket_name)\
-                .upload(file_path, json_content, {"content-type": "application/json"})
-
-            if isinstance(result, dict) and "error" in result:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to upload file: {result['error']}"
-                )
-
-            # Create signed URL (valid for 1 hour)
-            signed_url_result = self.supabase.storage\
-                .from_(self.bucket_name)\
-                .create_signed_url(file_path, 3600)
-
-            if isinstance(signed_url_result, dict) and "error" in signed_url_result:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to create signed URL: {signed_url_result['error']}"
-                )
-
-            # Extract URL correctly based on response structure
-            url = None
-            if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
-                url = signed_url_result["signedURL"]
-            else:
-                # Try to find the URL in a different format
-                url = str(signed_url_result)
-
-            # Create metadata record
-            metadata = {
-                "user_id": str(user_id),
-                "run_id": str(run_id),
-                "url": url,
-                "created_at": datetime.now().isoformat()
-            }
-
-            # Insert record into scratchpad_files table
-            file_record = {
-                "user_id": str(user_id),
-                "run_id": str(run_id),
-                "agent_id": str(agent_id),
-                "filename": filename,
-                "path": file_path,
-                "metadata": metadata,
-                "system_generated": True  # Flag to indicate this was generated by the system
-            }
-
-            result = self.supabase.table("scratchpad_files")\
-                .insert(file_record)\
-                .execute()
-
-            if not result.data:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to store metadata for system results"
-                )
-
-            return {
-                "message": "Successfully uploaded system results",
-                "run_id": str(run_id),
-                "agent_id": str(agent_id),
-                "filename": filename,
-                "url": url
-            }
-
-        except Exception as e:
-            logger.error(f"Error uploading system JSON: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to upload system JSON: {str(e)}"
-            )
 
 # Helper function to convert JSON to files
 async def handle_json_as_files(data: Dict[str, Any]) -> List[UploadFile]:
@@ -568,49 +54,138 @@ async def get_scratchpad_files(
     run_id: UUID,
     user_id: UUID = Depends(get_current_user_dependency)
 ):
-    """Get all files for a specific run_id, grouped by agent_id"""
+    """Get all files for a specific run_id, grouped by agent_id (excluding input files)"""
     service = ScratchpadService()
     return await service.get_scratchpad_files(run_id, user_id)
 
+@router.get("/{run_id}/input", response_model=List[ScratchpadFile])
+async def get_input_files(
+    run_id: UUID,
+    user_id: UUID = Depends(get_current_user_dependency)
+):
+    """Get all input files for a specific run_id"""
+    service = ScratchpadService()
+    return await service.get_input_files(run_id, user_id)
+
 @router.post("/{user_id}/{run_id}/{agent_id}")
 async def upload_files(
+    request: Request,
     user_id: UUID,
     run_id: UUID,
     agent_id: UUID,
-    files: List[UploadFile] = File(...),
-    api_key: str = Depends(get_api_key)
+    current_user: UUID = Depends(get_current_user_dependency)
 ):
     """Upload files to the scratchpad"""
-    service = ScratchpadService()
-    uploaded_files = await service.upload_files(user_id, run_id, agent_id, files)
-    return {
-        "message": f"Successfully uploaded {len(uploaded_files)} files",
-        "run_id": str(run_id),
-        "agent_id": str(agent_id),
-        "files": [file.filename for file in uploaded_files]
-    }
+    # Super detailed logging
+    logger.info(f"⭐ UPLOAD REQUEST RECEIVED ⭐")
+    logger.info(f"URL: {request.url}")
+    logger.info(f"Method: {request.method}")
+    logger.info(f"Path params: user_id={user_id}, run_id={run_id}, agent_id={agent_id}")
+    logger.info(f"Current user: {current_user}")
 
-@router.get("/{run_id}/{path:path}", response_model=ScratchpadFileResponse)
-async def get_file_by_path(
-    run_id: UUID,
-    path: str,
-    user_id: UUID = Depends(get_current_user_dependency)
-):
-    """Get file metadata and URL by path"""
-    service = ScratchpadService()
-    return await service.get_file_by_path(run_id, path, user_id)
+    # Log request headers
+    logger.info(f"Request headers:")
+    for header_name, header_value in request.headers.items():
+        logger.info(f"  {header_name}: {header_value}")
 
-@router.delete("/{run_id}")
-async def delete_scratchpad(
-    run_id: UUID,
-    user_id: UUID = Depends(get_current_user_dependency)
-):
-    """Delete all files for a specific run_id"""
-    service = ScratchpadService()
-    return await service.delete_scratchpad(run_id, user_id)
+    # Check content type
+    content_type = request.headers.get("content-type", "")
+    logger.info(f"Content-Type: {content_type}")
 
-@router.post("/{user_id}/{run_id}/{agent_id}")
-async def upload_files(
+    # Verify user authentication
+    if str(current_user) != str(user_id):
+        logger.warning(f"⚠️ User mismatch: current_user={current_user}, user_id={user_id}")
+        raise HTTPException(
+            status_code=403,
+            detail="You can only upload files to your own scratchpad"
+        )
+
+    # Get the raw body for debugging if there's an issue
+    try:
+        body = await request.body()
+        logger.info(f"Request body size: {len(body)} bytes")
+        # If small enough, log part of it for debugging
+        if len(body) < 1000:
+            logger.info(f"Request body preview: {body[:100]}")
+    except Exception as e:
+        logger.error(f"Failed to read request body: {str(e)}")
+
+    # Try to process the form data manually
+    try:
+        # Get the form data
+        form = await request.form()
+        logger.info(f"Form fields: {[key for key in form.keys()]}")
+
+        file_list = []
+        # Find any file fields and add them to the list
+        for field_name, field_value in form.items():
+            if isinstance(field_value, UploadFile):
+                logger.info(f"💾 Found file in form field '{field_name}': {field_value.filename}")
+                # Log file details
+                logger.info(f"  Filename: {field_value.filename}")
+                logger.info(f"  Content type: {field_value.content_type}")
+                # Try to get file size
+                try:
+                    size = 0
+                    chunk = await field_value.read(8192)
+                    while chunk:
+                        size += len(chunk)
+                        chunk = await field_value.read(8192)
+                    # Reset file position for later reading
+                    await field_value.seek(0)
+                    logger.info(f"  File size: {size} bytes")
+                except Exception as e:
+                    logger.error(f"  Error getting file size: {str(e)}")
+
+                file_list.append(field_value)
+            else:
+                logger.info(f"Form field '{field_name}': {field_value}")
+    except Exception as e:
+        logger.error(f"❌ Error processing form data: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to process form data: {str(e)}"
+        )
+
+    # Ensure we have at least one file
+    if not file_list:
+        logger.warning("❌ No files found in the request")
+        raise HTTPException(
+            status_code=400,
+            detail="No files provided for upload"
+        )
+
+    logger.info(f"✅ Found {len(file_list)} files to upload")
+
+    # Process the files
+    service = ScratchpadService()
+    try:
+        uploaded_files = await service.upload_files(user_id, run_id, agent_id, file_list)
+        logger.info(f"✅ Successfully uploaded {len(uploaded_files)} files")
+    except Exception as e:
+        logger.error(f"❌ Error uploading files: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading files: {str(e)}"
+        )
+
+    # Return a different response format for input files
+    if str(agent_id) == INPUT_AGENT_ID:
+        return {
+            "message": f"Successfully uploaded {len(uploaded_files)} input files",
+            "run_id": str(run_id),
+            "files": uploaded_files
+        }
+    else:
+        return {
+            "message": f"Successfully uploaded {len(uploaded_files)} files",
+            "run_id": str(run_id),
+            "agent_id": str(agent_id),
+            "files": [file.filename for file in uploaded_files]
+        }
+
+@router.post("/{user_id}/{run_id}/{agent_id}/json")
+async def upload_json(
     user_id: UUID,
     run_id: UUID,
     agent_id: UUID,
@@ -620,7 +195,6 @@ async def upload_files(
     """Upload JSON data to the scratchpad
 
     This endpoint can handle both regular user uploads and system-generated uploads
-    with the system user ID (00000000-0000-0000-0000-000000000000)
     """
     # Validate API key
     if x_ngina_key is None or x_ngina_key != ngina_scratchpad_key:
@@ -640,8 +214,6 @@ async def upload_files(
             return result
         else:
             # For regular user uploads
-            # This assumes there's another method for handling files
-            # If you're only handling JSON data, you can remove this branch
             files = await handle_json_as_files(data)  # Convert JSON to a file object
             uploaded_files = await service.upload_files(user_id, run_id, agent_id, files)
             return {
@@ -656,3 +228,22 @@ async def upload_files(
             status_code=500,
             detail=f"Failed to upload data: {str(e)}"
         )
+
+@router.get("/{run_id}/{path:path}", response_model=ScratchpadFileResponse)
+async def get_file_by_path(
+    run_id: UUID,
+    path: str,
+    user_id: UUID = Depends(get_current_user_dependency)
+):
+    """Get file metadata and URL by path"""
+    service = ScratchpadService()
+    return await service.get_file_by_path(run_id, path, user_id)
+
+@router.delete("/{run_id}")
+async def delete_scratchpad(
+    run_id: UUID,
+    user_id: UUID = Depends(get_current_user_dependency)
+):
+    """Delete all files for a specific run_id"""
+    service = ScratchpadService()
+    return await service.delete_scratchpad(run_id, user_id)

@@ -27,7 +27,7 @@ async def get_operation(operation_id: int, current_user: UUID4 = Depends(get_cur
     return await service.get_operation(operation_id)
 
 @router.delete("/run/{operation_id}")
-async def delete_operation(operation_id: int, current_user: UUID4 = Depends(get_current_user)):
+async def delete_operation(operation_id: UUID4, current_user: UUID4 = Depends(get_current_user)):
     service = OperationService()
     return await service.delete_operation(operation_id)
 

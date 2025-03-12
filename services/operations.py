@@ -482,7 +482,7 @@ class OperationService:
             logging.error(f"Error getting operation: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to get operation: {str(e)}")
 
-    async def delete_operation(self, operation_id: int) -> bool:
+    async def delete_operation(self, operation_id: UUID4) -> bool:
         try:
             result = self.supabase.table("agent_runs")\
                 .delete()\
