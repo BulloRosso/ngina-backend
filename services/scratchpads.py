@@ -157,6 +157,8 @@ class ScratchpadService:
 
             input_files = []
             for file_data in result.data:
+                logger.info("x......")
+                logger.info(file_data.get("path"))
                 # Get the file path for creating a fresh signed URL
                 file_path = file_data.get("path")
 
