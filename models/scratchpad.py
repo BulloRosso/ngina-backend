@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, UUID4, ConfigDict, Field,  field_validator
+from uuid import UUID
 
 class ScratchpadFileMetadata(BaseModel):
     user_id: UUID4

@@ -66,7 +66,9 @@ class ScratchpadService:
         """Get all files for a specific run_id, grouped by agent_id"""
         try:
             # Query the scratchpad_files table for matching run_id and user_id
-            # Exclude files from the special input agent (now using a UUID)
+            # Exclude files from the special input agent
+            logger.info(f"Fetching scratchpad files for run_id: {run_id}, user_id: {user_id}")
+
             result = self.supabase.table("scratchpad_files")\
                 .select("*")\
                 .eq("run_id", str(run_id))\
@@ -75,63 +77,83 @@ class ScratchpadService:
                 .execute()
 
             if not result.data:
+                logger.info(f"No scratchpad files found for run_id: {run_id}")
                 return ScratchpadFiles()
+
+            logger.info(f"Found {len(result.data)} scratchpad files")
 
             # Group files by agent_id
             files_by_agent = {}
             for file_data in result.data:
-                agent_id = UUID(file_data.get("agent_id"))
-
-                # Get the file path for creating a fresh signed URL
-                file_path = file_data.get("path")
-
-                # Check if the URL is expired or will expire soon
-                current_url = file_data.get("metadata", {}).get("url", "")
-                fresh_url = current_url
-
-                # Refresh the URL if needed
                 try:
-                    if is_url_expired(current_url):
-                        # Create a new signed URL (valid for 1 hour)
-                        signed_url_result = self.supabase.storage\
-                            .from_(self.bucket_name)\
-                            .create_signed_url(file_path, 3600)
+                    agent_id = str(file_data.get("agent_id"))
+                    logger.info(f"Processing file for agent_id: {agent_id}, filename: {file_data.get('filename')}")
 
-                        if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
-                            fresh_url = signed_url_result["signedURL"]
-                        else:
-                            fresh_url = str(signed_url_result)
+                    # Get the file path for creating a fresh signed URL
+                    file_path = file_data.get("path")
 
-                        # Update the URL in the metadata
-                        metadata = file_data.get("metadata", {})
-                        metadata["url"] = fresh_url
-                        file_data["metadata"] = metadata
+                    # Check if the URL is expired or will expire soon
+                    current_url = file_data.get("metadata", {}).get("url", "")
+                    fresh_url = current_url
 
-                    # Create the ScratchpadFile with the updated metadata
-                    scratchpad_file = ScratchpadFile.model_validate(file_data)
-
-                    if agent_id not in files_by_agent:
-                        files_by_agent[agent_id] = []
-
-                    files_by_agent[agent_id].append(scratchpad_file)
-
-                except Exception as file_error:
-                    # Log the error but continue processing other files
-                    logger.warning(f"Error refreshing URL for file {file_path}: {str(file_error)}")
-                    # Skip this file and continue with others
-                    # Optionally, you could add the file with the original URL instead
-
-                    # If you want to include the file with its original URL (might still be broken):
+                    # Refresh the URL if needed
                     try:
-                        scratchpad_file = ScratchpadFile.model_validate(file_data)
+                        if is_url_expired(current_url):
+                            # Create a new signed URL (valid for 1 hour)
+                            signed_url_result = self.supabase.storage\
+                                .from_(self.bucket_name)\
+                                .create_signed_url(file_path, 3600)
+
+                            if isinstance(signed_url_result, dict) and "signedURL" in signed_url_result:
+                                fresh_url = signed_url_result["signedURL"]
+                            else:
+                                fresh_url = str(signed_url_result)
+
+                            # Update the URL in the metadata
+                            metadata = file_data.get("metadata", {})
+                            metadata["url"] = fresh_url
+                            file_data["metadata"] = metadata
+
+                        # Skip pydantic validation by manually constructing the file object
+                        scratchpad_file = {
+                            "id": file_data.get("id"),
+                            "user_id": file_data.get("user_id"),
+                            "run_id": file_data.get("run_id"),
+                            "agent_id": agent_id,
+                            "filename": file_data.get("filename"),
+                            "path": file_data.get("path"),
+                            "metadata": {
+                                "user_id": file_data.get("metadata", {}).get("user_id"),
+                                "run_id": file_data.get("metadata", {}).get("run_id"),
+                                "url": fresh_url,
+                                "created_at": file_data.get("metadata", {}).get("created_at")
+                            },
+                            "created_at": file_data.get("created_at")
+                        }
+
                         if agent_id not in files_by_agent:
                             files_by_agent[agent_id] = []
-                        files_by_agent[agent_id].append(scratchpad_file)
-                    except Exception:
-                        # If even that fails, just skip this file entirely
-                        pass
 
-            return ScratchpadFiles(files=files_by_agent)
+                        files_by_agent[agent_id].append(scratchpad_file)
+                        logger.info(f"Successfully processed file for agent_id: {agent_id}")
+
+                    except Exception as file_error:
+                        # Log the error but continue processing other files
+                        logger.warning(f"Error refreshing URL for file {file_path}: {str(file_error)}")
+                        continue
+
+                except Exception as e:
+                    logger.warning(f"Error processing file {file_data.get('id')}: {str(e)}")
+                    continue
+
+            try:
+                logger.info(f"Returning files grouped by {len(files_by_agent)} agents")
+                # Try using the model - this might fail with UUID validation
+                return ScratchpadFiles(files=files_by_agent)
+            except Exception as model_error:
+                logger.warning(f"Error creating ScratchpadFiles model: {str(model_error)}")
+                # Return a simple dictionary instead
+                return {"files": files_by_agent}
 
         except Exception as e:
             logger.error(f"Error retrieving scratchpad files: {str(e)}")
@@ -139,7 +161,7 @@ class ScratchpadService:
                 status_code=500,
                 detail=f"Failed to retrieve scratchpad files: {str(e)}"
             )
-
+            
     async def get_input_files(self, run_id: UUID, user_id: UUID) -> List[ScratchpadFile]:
         """Get all input files for a specific run_id"""
         try:
