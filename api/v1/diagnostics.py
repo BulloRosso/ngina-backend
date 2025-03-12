@@ -532,11 +532,511 @@ async def generate_test_suite(test_results: TestResults) -> AsyncIterator[str]:
 
     yield "\n"
 
+    # ===== Section 6: Tagging Tests =====
+    yield "## 6. Tagging Tests\n\n"
+
+    # Create a tag
+    yield "### 6.1 Create Tag\n"
+    try:
+        # We'll store tag info in the test state
+        test_state["tag_category"] = "TestCategory"
+        test_state["tag_name"] = "TestTag"
+        test_state["full_tag"] = f"{test_state['tag_category']}:{test_state['tag_name']}"
+
+        # Direct call to Supabase to create a tag
+        try:
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY")
+
+            if not supabase_url or not supabase_key:
+                yield "ERROR: SUPABASE_URL or SUPABASE_KEY environment variables not set\n"
+            else:
+                supabase = create_client(supabase_url, supabase_key)
+
+                # Create a tag in the tags table
+                result = supabase.table("tags").insert({
+                    "category_name": test_state["tag_category"],
+                    "tag_name": test_state["tag_name"]
+                }).execute()
+
+                if result and hasattr(result, 'data') and result.data:
+                    yield f"✅ PASS: Successfully created tag {test_state['full_tag']}\n"
+                else:
+                    test_results.failed_tests.append("Create Tag")
+                    yield f"❌ FAIL: Failed to create tag\n"
+        except Exception as e:
+            test_results.failed_tests.append("Create Tag")
+            yield f"ERROR: Failed to create tag with exception: {str(e)}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Create Tag")
+        yield f"ERROR: Create tag test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Assign tag to agent
+    yield "### 6.2 Assign Tag to Agent\n"
+    try:
+        if not test_state["agent_id"] or not test_state["full_tag"]:
+            yield "SKIP: Skipping test because agent or tag creation failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                tag_data = {
+                    "tags": test_state["full_tag"]
+                }
+
+                response = await client.post(
+                    f"{api_base_url}/v1/tagging/{test_state['agent_id']}",
+                    json=tag_data,
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully assigned tag to agent\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    if "tags" in response_data and response_data["tags"] == test_state["full_tag"]:
+                        yield f"✅ PASS: Confirmed tag {test_state['full_tag']} is assigned to agent\n"
+                    else:
+                        test_results.failed_tests.append("Assign Tag - Verification Failed")
+                        yield f"❌ FAIL: Could not verify tag assignment in response\n"
+                else:
+                    test_results.failed_tests.append("Assign Tag to Agent")
+                    yield f"❌ FAIL: Failed to assign tag to agent. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Assign Tag to Agent")
+        yield f"ERROR: Assign tag to agent test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Get tags for agent
+    yield "### 6.3 Get Tags for Agent\n"
+    try:
+        if not test_state["agent_id"] or not test_state["full_tag"]:
+            yield "SKIP: Skipping test because agent or tag creation failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{api_base_url}/v1/tagging/{test_state['agent_id']}",
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully retrieved tags for agent\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    if "tags" in response_data and response_data["tags"] == test_state["full_tag"]:
+                        yield f"✅ PASS: Confirmed tag {test_state['full_tag']} is associated with agent\n"
+                    else:
+                        test_results.failed_tests.append("Get Tags - Verification Failed")
+                        yield f"❌ FAIL: Expected tag not found in response\n"
+                        yield f"Response: {response_data}\n" 
+                else:
+                    test_results.failed_tests.append("Get Tags for Agent")
+                    yield f"❌ FAIL: Failed to get tags for agent. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Get Tags for Agent")
+        yield f"ERROR: Get tags for agent test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Remove tag from agent
+    yield "### 6.4 Remove Tag from Agent\n"
+    try:
+        if not test_state["agent_id"]:
+            yield "SKIP: Skipping test because agent creation failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                # Setting empty tags removes all tags
+                tag_data = {
+                    "tags": ""
+                }
+
+                response = await client.post(
+                    f"{api_base_url}/v1/tagging/{test_state['agent_id']}",
+                    json=tag_data,
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully removed tags from agent\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    if "tags" in response_data and response_data["tags"] == "":
+                        yield "✅ PASS: Confirmed tags are removed from agent\n"
+                    else:
+                        test_results.failed_tests.append("Remove Tag - Verification Failed")
+                        yield f"❌ FAIL: Tags not properly removed in response\n"
+                else:
+                    test_results.failed_tests.append("Remove Tag from Agent")
+                    yield f"❌ FAIL: Failed to remove tags from agent. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Remove Tag from Agent")
+        yield f"ERROR: Remove tag from agent test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Delete tag (using direct Supabase access)
+    yield "### 6.5 Delete Tag\n"
+    try:
+        if not test_state["tag_category"] or not test_state["tag_name"]:
+            yield "SKIP: Skipping test because tag creation failed\n"
+        else:
+            try:
+                supabase_url = os.getenv("SUPABASE_URL")
+                supabase_key = os.getenv("SUPABASE_KEY")
+
+                if not supabase_url or not supabase_key:
+                    yield "ERROR: SUPABASE_URL or SUPABASE_KEY environment variables not set\n"
+                else:
+                    supabase = create_client(supabase_url, supabase_key)
+
+                    # Delete the tag from the tags table
+                    result = supabase.table("tags")\
+                        .delete()\
+                        .eq("category_name", test_state["tag_category"])\
+                        .eq("tag_name", test_state["tag_name"])\
+                        .execute()
+
+                    if result and hasattr(result, 'data'):
+                        yield f"✅ PASS: Successfully deleted tag {test_state['full_tag']}\n"
+                    else:
+                        test_results.failed_tests.append("Delete Tag")
+                        yield f"❌ FAIL: Failed to delete tag\n"
+            except Exception as e:
+                test_results.failed_tests.append("Delete Tag")
+                yield f"ERROR: Failed to delete tag with exception: {str(e)}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Delete Tag")
+        yield f"ERROR: Delete tag test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # ===== Section 7: Scratchpad Tests =====
+    yield "## 7. Scratchpad Tests\n\n"
+
+    # Post JSON files to scratchpad
+    yield "### 7.1 Post Files to Scratchpad\n"
+    try:
+        if not test_state["run_id"] or not test_state["agent_id"]:
+            yield "SKIP: Skipping test because run or agent creation failed\n"
+        else:
+            # Create two test JSON files
+            test_state["scratchpad_files"] = []
+
+            for i in range(2):
+                # Create file content
+                file_content = {
+                    "test_file": f"content_{i}",
+                    "timestamp": datetime.now().isoformat()
+                }
+
+                # Get the ngina key for scratchpad access
+                ngina_key = os.getenv("NGINA_SCRATCHPAD_KEY", "test-key")
+
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{api_base_url}/v1/scratchpads/{test_state['user_id']}/{test_state['run_id']}/{test_state['agent_id']}",
+                        json=file_content,
+                        headers={"X-NGINA-KEY": ngina_key}
+                    )
+
+                    if response.status_code in (200, 201):
+                        response_data = response.json()
+                        yield f"✅ PASS: Successfully uploaded file {i+1} to scratchpad\n"
+                        yield f"Status code: {response.status_code}\n"
+
+                        if "filename" in response_data:
+                            test_state["scratchpad_files"].append(response_data["filename"])
+                            yield f"File name: {response_data['filename']}\n"
+
+                        if "url" in response_data:
+                            yield f"URL available: {'yes' if response_data['url'] else 'no'}\n"
+                    else:
+                        test_results.failed_tests.append(f"Upload Scratchpad File {i+1}")
+                        yield f"❌ FAIL: Failed to upload file to scratchpad. Status code: {response.status_code}\n"
+                        yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Upload Scratchpad Files")
+        yield f"ERROR: Upload files to scratchpad test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Get scratchpad files for run
+    yield "### 7.2 Get Scratchpad Files\n"
+    try:
+        if not test_state["run_id"]:
+            yield "SKIP: Skipping test because run creation failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{api_base_url}/v1/scratchpads/{test_state['run_id']}",
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully retrieved scratchpad files\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    if "files" in response_data and isinstance(response_data["files"], dict):
+                        # Count the files for this agent
+                        agent_files = response_data["files"].get(str(test_state["agent_id"]), [])
+                        yield f"Number of files for agent: {len(agent_files)}\n"
+
+                        if len(agent_files) >= 2:
+                            yield "✅ PASS: Found expected files in scratchpad\n"
+
+                            # Store a file path for the next test
+                            if agent_files and len(agent_files) > 0:
+                                test_state["scratchpad_file_path"] = f"{test_state['agent_id']}/{agent_files[0]['filename']}"
+                        else:
+                            test_results.failed_tests.append("Get Scratchpad Files - Expected Files Not Found")
+                            yield "❌ FAIL: Did not find the expected number of files\n"
+                    else:
+                        test_results.failed_tests.append("Get Scratchpad Files - Invalid Response Format")
+                        yield "❌ FAIL: Invalid response format for scratchpad files\n"
+                        yield f"Response: {response_data}\n"
+                else:
+                    test_results.failed_tests.append("Get Scratchpad Files")
+                    yield f"❌ FAIL: Failed to get scratchpad files. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Get Scratchpad Files")
+        yield f"ERROR: Get scratchpad files test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Get metadata for a specific file
+    yield "### 7.3 Get Scratchpad File Metadata\n"
+    try:
+        if not test_state["run_id"] or not test_state.get("scratchpad_file_path"):
+            yield "SKIP: Skipping test because run creation or file listing failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{api_base_url}/v1/scratchpads/{test_state['run_id']}/{test_state['scratchpad_file_path']}",
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully retrieved scratchpad file metadata\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    if "metadata" in response_data and "url" in response_data:
+                        yield "✅ PASS: Found metadata and URL in response\n"
+                        yield f"URL available: {'yes' if response_data['url'] else 'no'}\n"
+                    else:
+                        test_results.failed_tests.append("Get Scratchpad File Metadata - Invalid Response Format")
+                        yield "❌ FAIL: Invalid response format for file metadata\n"
+                        yield f"Response: {response_data}\n"
+                else:
+                    test_results.failed_tests.append("Get Scratchpad File Metadata")
+                    yield f"❌ FAIL: Failed to get file metadata. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Get Scratchpad File Metadata")
+        yield f"ERROR: Get file metadata test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # ===== Section 8: Prompts Tests =====
+    yield "## 8. Prompts Tests\n\n"
+
+    # Create a prompt
+    yield "### 8.1 Create Prompt\n"
+    try:
+        prompt_data = {
+            "title": "Test Prompt",
+            "description": "This is a test prompt for integration testing",
+            "content": "This is the content of the test prompt with {{variable}} placeholder",
+            "is_active": False,
+            "variables": [
+                {
+                    "name": "variable",
+                    "type": "text",
+                    "description": "A test variable"
+                }
+            ]
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{api_base_url}/v1/prompts",
+                json=prompt_data,
+                headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+            )
+
+            if response.status_code in (200, 201):
+                response_data = response.json()
+                test_state["prompt_id"] = response_data.get("id")
+                yield f"✅ PASS: Successfully created prompt with ID: {test_state['prompt_id']}\n"
+                yield f"Status code: {response.status_code}\n"
+                yield f"Prompt title: {response_data.get('title')}\n"
+            else:
+                test_results.failed_tests.append("Create Prompt")
+                yield f"❌ FAIL: Failed to create prompt. Status code: {response.status_code}\n"
+                yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Create Prompt")
+        yield f"ERROR: Create prompt test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Get the created prompt
+    yield "### 8.2 Get Prompt\n"
+    try:
+        if not test_state.get("prompt_id"):
+            yield "SKIP: Skipping test because prompt creation failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{api_base_url}/v1/prompts/{test_state['prompt_id']}",
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully retrieved the prompt\n"
+                    yield f"Status code: {response.status_code}\n"
+                    yield f"Prompt title: {response_data.get('title')}\n"
+                    yield f"Is active: {response_data.get('is_active')}\n"
+                else:
+                    test_results.failed_tests.append("Get Prompt")
+                    yield f"❌ FAIL: Failed to retrieve prompt. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Get Prompt")
+        yield f"ERROR: Get prompt test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Activate the prompt
+    yield "### 8.3 Activate Prompt\n"
+    try:
+        if not test_state.get("prompt_id"):
+            yield "SKIP: Skipping test because prompt creation failed\n"
+        else:
+            # Prepare update data to activate the prompt
+            update_data = {
+                "is_active": True
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.put(
+                    f"{api_base_url}/v1/prompts/{test_state['prompt_id']}",
+                    json=update_data,
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    response_data = response.json()
+                    yield "✅ PASS: Successfully activated the prompt\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    if "is_active" in response_data and response_data["is_active"] is True:
+                        yield "✅ PASS: Confirmed prompt is now active\n"
+                    else:
+                        test_results.failed_tests.append("Activate Prompt - Verification Failed")
+                        yield "❌ FAIL: Prompt not properly activated in response\n"
+                else:
+                    test_results.failed_tests.append("Activate Prompt")
+                    yield f"❌ FAIL: Failed to activate prompt. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Activate Prompt")
+        yield f"ERROR: Activate prompt test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # List all prompts
+    yield "### 8.4 List Prompts\n"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{api_base_url}/v1/prompts",
+                headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+            )
+
+            if response.status_code == 200:
+                response_data = response.json()
+                yield "✅ PASS: Successfully retrieved the list of prompts\n"
+                yield f"Status code: {response.status_code}\n"
+                yield f"Number of prompts: {len(response_data)}\n"
+
+                # Verify our test prompt is in the list
+                if test_state.get("prompt_id"):
+                    prompt_found = any(prompt.get("id") == test_state["prompt_id"] for prompt in response_data)
+                    if prompt_found:
+                        yield "✅ PASS: Test prompt was found in the list\n"
+                    else:
+                        test_results.failed_tests.append("List Prompts - Prompt Not Found")
+                        yield "❌ FAIL: Test prompt was not found in the list\n"
+            else:
+                test_results.failed_tests.append("List Prompts")
+                yield f"❌ FAIL: Failed to list prompts. Status code: {response.status_code}\n"
+                yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("List Prompts")
+        yield f"ERROR: List prompts test failed with exception: {str(e)}\n"
+
+    yield "\n"
+
+    # Delete the prompt
+    yield "### 8.5 Delete Prompt\n"
+    try:
+        if not test_state.get("prompt_id"):
+            yield "SKIP: Skipping test because prompt creation failed\n"
+        else:
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(
+                    f"{api_base_url}/v1/prompts/{test_state['prompt_id']}",
+                    headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                )
+
+                if response.status_code == 200:
+                    yield "✅ PASS: Successfully deleted prompt\n"
+                    yield f"Status code: {response.status_code}\n"
+
+                    # Verify prompt is deleted by listing all prompts again
+                    verify_response = await client.get(
+                        f"{api_base_url}/v1/prompts", 
+                        headers={"Authorization": f"Bearer {test_state['auth_token']}"}
+                    )
+
+                    if verify_response.status_code == 200:
+                        verify_data = verify_response.json()
+                        prompt_still_exists = any(prompt.get("id") == test_state["prompt_id"] for prompt in verify_data)
+
+                        if not prompt_still_exists:
+                            yield "✅ PASS: Verified prompt was successfully deleted\n"
+                        else:
+                            test_results.failed_tests.append("Delete Prompt - Prompt Still Exists")
+                            yield "❌ FAIL: Prompt still exists after deletion\n"
+                    else:
+                        test_results.failed_tests.append("Delete Prompt - Verification Failed")
+                        yield f"❌ FAIL: Could not verify prompt deletion. Status code: {verify_response.status_code}\n"
+                else:
+                    test_results.failed_tests.append("Delete Prompt")
+                    yield f"❌ FAIL: Failed to delete prompt. Status code: {response.status_code}\n"
+                    yield f"Response: {response.text if hasattr(response, 'text') else 'No response text'}\n"
+    except Exception as e:
+        test_results.failed_tests.append("Delete Prompt")
+        yield f"ERROR: Delete prompt test failed with exception: {str(e)}\n"
+
+    yield "\n"
+    
     # ===== Section 5: Cleanup =====
-    yield "## 5. Cleanup\n\n"
+    yield "## 9. Cleanup\n\n"
 
     # Remove Agent from Team test
-    yield "### 5.1 Remove Agent from Team\n"
+    yield "### 9.1 Remove Agent from Team\n"
     try:
         if not test_state["agent_id"] or not test_state["team_id"]:
             yield "SKIP: Skipping test because agent or team retrieval failed\n"
@@ -570,7 +1070,7 @@ async def generate_test_suite(test_results: TestResults) -> AsyncIterator[str]:
     yield "\n"
 
     # Delete Operation test
-    yield "### 5.2 Delete Operation\n"
+    yield "### 9.2 Delete Operation\n"
     try:
         if not test_state["run_id"]:
             yield "SKIP: Skipping test because operation creation failed\n"
@@ -599,7 +1099,7 @@ async def generate_test_suite(test_results: TestResults) -> AsyncIterator[str]:
     yield "\n"
 
     # Delete Agent test
-    yield "### 5.3 Delete Agent\n"
+    yield "### 9.3 Delete Agent\n"
     try:
         if not test_state["agent_id"]:
             yield "SKIP: Skipping test because agent creation failed\n"
