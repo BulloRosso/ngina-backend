@@ -17,6 +17,8 @@ from .dashboards import router as dashboards_router
 from .dashboard_components import router as dashboard_components_router
 from .users import router as users_router
 from .diagnostics import router as diagnostics_router 
+from .dashboardbot import router as dashboardbot_router
+from .dashboardskpi import router as dashboardskpi_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
@@ -36,3 +38,5 @@ router.include_router(dashboards_router)
 router.include_router(dashboard_components_router)
 router.include_router(users_router)
 router.include_router(diagnostics_router)
+router.include_router(dashboardbot_router)
+router.include_router(dashboardskpi_router)
