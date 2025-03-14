@@ -35,3 +35,7 @@ class HumanInTheLoop(BaseModel):
     workflow_id: Optional[str] = None
     reason: Optional[str] = None
     callback_url: Optional[str] = None
+
+class HumanFeedbackUpdate(BaseModel):
+    status: HumanFeedbackStatus
+    reason: Optional[str] = None

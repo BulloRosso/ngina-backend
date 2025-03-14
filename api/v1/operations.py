@@ -77,6 +77,25 @@ async def process_workflow_results(
             detail=f"Internal server error: {str(e)}"
         )
 
+@router.get("/human-feedback", response_model=List[HumanInTheLoop])
+async def get_human_feedback_by_run(
+    run_id: UUID4 = None,
+    status: str = None,
+    current_user: UUID4 = Depends(get_current_user)
+):
+    """Get human-in-the-loop requests filtered by run_id and/or status"""
+    try:
+        service = OperationService()
+        return await service.get_human_feedback_by_run(run_id, status)
+    except Exception as e:
+        logging.error(f"Error getting human feedback requests: {str(e)}", exc_info=True)
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+        
 @router.post("/workflow/{run_id}/request-human-feedback/{agent_id}")
 async def request_human_feedback(
     request: Request,

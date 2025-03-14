@@ -535,6 +535,44 @@ class OperationService:
                 detail=f"Failed to get workflow environment: {str(e)}"
             )
 
+    async def get_human_feedback_by_run(self, run_id: UUID4 = None, status: str = None):
+         """
+         Get human-in-the-loop feedback requests filtered by run_id and status
+
+         Args:
+             run_id: Optional run ID to filter requests for a specific run
+             status: Optional status to filter requests (e.g., 'pending', 'approved', 'rejected')
+
+         Returns:
+             List of HumanInTheLoop objects matching the filters
+         """
+         try:
+             # Start with the basic query using Supabase
+             query = self.supabase.table("human_in_the_loop").select("*")
+
+             # Add filters if provided
+             if run_id:
+                 query = query.eq("run_id", str(run_id))
+
+             if status:
+                 query = query.eq("status", status)
+
+             # Order by creation date, most recent first
+             query = query.order("created_at", desc=True)
+
+             # Execute the query
+             result = query.execute()
+
+             if not result.data:
+                 return []
+
+             # Return the results directly - they're already in the right format
+             return result.data
+
+         except Exception as e:
+             logging.error(f"Error fetching human feedback requests: {str(e)}", exc_info=True)
+             raise
+             
     async def process_workflow_results(self, run_id: str, agent_id: str, result_data: Any, x_ngina_key: Optional[str] = None):
         """Process workflow results and store them using the scratchpads service"""
         try:
