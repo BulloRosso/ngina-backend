@@ -241,10 +241,10 @@ async def update_operation_status(
 
 @router.get("/history/{agent_id}", response_model=List[Operation])
 async def get_agent_run_history(agent_id: UUID4, current_user: UUID4 = Depends(get_current_user)):
-    """Get the 50 most recent operations for a specific agent"""
+    """Get the 50 most recent operations for a specific agent that belong to the current user"""
     try:
         service = OperationService()
-        return await service.get_agent_run_history(agent_id)
+        return await service.get_agent_run_history(agent_id, current_user)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e

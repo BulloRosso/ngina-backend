@@ -387,54 +387,20 @@ class OperationService:
                         operation_data["workflow_id"] = existing_workflow_id
 
                         # use agent_endpoint_url
-                        webhook_url = agent_webhook_url 
+                        webhook_url = agent_webhook_url
 
-            # Create or update the operation in the database
-            if operation_data.get("workflow_id"):
-                existing = self.supabase.table("agent_runs")\
-                    .select("*")\
-                    .eq("workflow_id", operation_data["workflow_id"])\
-                    .execute()
-
-                if existing.data:
-                    # Update existing operation
-                    update_data = {
-                        "agent_id": operation_data.get("agent_id"),
-                        "results": operation_data.get("results"),
-                        "status": operation_data.get("status"),
-                        "sum_credits": operation_data.get("sum_credits"),
-                        "finished_at": operation_data.get("finished_at")
-                    }
-
-                    # If agent_endpoint is present in the operation data, include it
-                    if "agent_endpoint" in operation_data:
-                        update_data["agent_endpoint"] = operation_data["agent_endpoint"]
-
-                    # Make sure this is properly awaited
-                    result = self.supabase.table("agent_runs")\
-                        .update(update_data)\
-                        .eq("workflow_id", operation_data["workflow_id"])\
-                        .execute()
-                else:
-                    # Create new operation
-                    # Make sure this is properly awaited
-                    result = self.supabase.table("agent_runs")\
-                        .insert(operation_data)\
-                        .execute()
-            else:
-                # Create new operation without workflow_id
-                # Make sure this is properly awaited
-                result = self.supabase.table("agent_runs")\
-                    .insert(operation_data)\
-                    .execute()
+            # Always create a new operation record for each run
+            result = self.supabase.table("agent_runs")\
+                .insert(operation_data)\
+                .execute()
 
             if not result.data:
-                raise HTTPException(status_code=500, detail="Failed to create/update operation")
+                raise HTTPException(status_code=500, detail="Failed to create operation record")
 
             # Get the saved operation with the assigned ID
             saved_operation = result.data[0]
             run_id = str(saved_operation["id"])
-            logging.info(f"Operation created/updated with ID: {run_id}")
+            logging.info(f"New operation created with ID: {run_id}")
 
             # Now trigger the webhook if needed
             if webhook_url:
@@ -1115,12 +1081,22 @@ class OperationService:
                 detail=f"Failed to get human feedback: {str(e)}"
             )
 
-    async def get_agent_run_history(self, agent_id: UUID4) -> List[Operation]:
-        """Get the 50 most recent operations for a specific agent"""
+    async def get_agent_run_history(self, agent_id: UUID4, user_id: UUID4) -> List[Operation]:
+        """
+        Get the 50 most recent operations for a specific agent that belong to the given user
+
+        Args:
+            agent_id: ID of the agent to get history for
+            user_id: ID of the user who should own these operations
+
+        Returns:
+            List of Operation objects matching the criteria
+        """
         try:
             result = self.supabase.table("agent_runs")\
                 .select("*")\
                 .eq("agent_id", str(agent_id))\
+                .eq("user_id", str(user_id))\
                 .order("created_at", desc=True)\
                 .limit(50)\
                 .execute()
@@ -1133,7 +1109,7 @@ class OperationService:
         except Exception as e:
             logging.error(f"Error getting agent run history: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to get agent run history: {str(e)}")
-    
+ 
     async def update_operation_status(self, run_id: str, status: str, debug_info: Dict[str, Any], api_key: str) -> Dict[str, Any]:
         """Update the status of an operation with debug information"""
         try:
