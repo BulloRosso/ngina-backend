@@ -8,6 +8,7 @@ from services.accounting import AccountingService
 from dependencies.auth import get_current_user_dependency
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/accounting", tags=["accounting"])
 
@@ -35,6 +36,7 @@ async def charge_user(user_id: UUID4, charge_data: ChargeRequest):
     Charges a user for using an agent.
     """
     service = AccountingService()
+    logger.info(f"Charging user {user_id} for agent {charge_data.agent_id} with amount {charge_data.credits}")
     return await service.charge_user(user_id, charge_data)
 
 @router.post("/refill/{user_id}", response_model=Transaction, dependencies=[Depends(verify_api_key)])

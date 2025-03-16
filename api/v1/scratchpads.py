@@ -42,8 +42,7 @@ async def handle_json_as_files(data: Dict[str, Any]) -> List[UploadFile]:
     # Create an UploadFile object
     upload_file = UploadFile(
         filename="data.json",
-        file=file_content,
-        content_type="application/json"
+        file=file_content
     )
 
     return [upload_file]
@@ -74,23 +73,22 @@ async def upload_files(
     run_id: UUID,
     agent_id: UUID,
     current_user: UUID = Depends(get_current_user_dependency),
+    x_ngina_key: Optional[str] = Header(None),
     file: UploadFile = File(...)  # Explicitly require a file
 ):
     """Upload files to the scratchpad"""
-    # Super detailed logging
-    logger.info(f"⭐ UPLOAD REQUEST RECEIVED ⭐")
-    logger.info(f"URL: {request.url}")
-    logger.info(f"Method: {request.method}")
-    logger.info(f"Path params: user_id={user_id}, run_id={run_id}, agent_id={agent_id}")
-    logger.info(f"Current user: {current_user}")
-    logger.info(f"File: {file.filename}, size: {file.size if hasattr(file, 'size') else 'unknown'}")
-
+    
+    # Validate API key
+    api_key_missing = x_ngina_key is None or x_ngina_key != ngina_scratchpad_key
+       
     # Verify user authentication
-    if str(current_user) != str(user_id):
-        logger.warning(f"⚠️ User mismatch: current_user={current_user}, user_id={user_id}")
+    user_jwt_missing = str(current_user) != str(user_id)
+
+    if api_key_missing and user_jwt_missing:
+        logger.warning(f"⚠️ Use API key or JWT authentication")
         raise HTTPException(
             status_code=403,
-            detail="You can only upload files to your own scratchpad"
+            detail="Unauthenticated: No API key or JWT provided"
         )
 
     # Process the file directly
@@ -196,22 +194,10 @@ async def upload_json(
     try:
         service = ScratchpadService()
 
-        # Check if this is a system user call
-        system_user_id = UUID("00000000-0000-0000-0000-000000000000")
-        if user_id == system_user_id:
-            # Handle as a system upload of JSON data
-            result = await service.upload_json_system(user_id, run_id, agent_id, data)
-            return result
-        else:
-            # For regular user uploads
-            files = await handle_json_as_files(data)  # Convert JSON to a file object
-            uploaded_files = await service.upload_files(user_id, run_id, agent_id, files)
-            return {
-                "message": f"Successfully uploaded {len(uploaded_files)} files",
-                "run_id": str(run_id),
-                "agent_id": str(agent_id),
-                "files": [file.filename for file in uploaded_files]
-            }
+        # Handle as a system upload of JSON data
+        result = await service.upload_json_system(user_id, run_id, agent_id, data)
+        return result
+       
     except Exception as e:
         logger.error(f"Error uploading data: {str(e)}")
         raise HTTPException(

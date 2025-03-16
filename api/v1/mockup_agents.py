@@ -7,8 +7,10 @@ import json
 import asyncio
 import os
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO) 
 
 router = APIRouter(prefix="/mockup-agents", tags=["mockup-agents"])
 
@@ -669,14 +671,17 @@ async def post_wrapper_endpoint(request: Request, agent_id: str = Path(...)):
     POST request handler for wrapper agents.
     Acts as a proxy to the target URL (workflow_id).
     """
-    import httpx
 
+    logger.info("WRAPPER starting")
+    
     # Validate and get agent data
     agent = await validate_wrapper_agent(agent_id)
 
     # Get the target URL from wrapped_url
     target_url = agent.get("wrapped_url")
 
+    logger.info("WRAPPER: Calling target URL: " + target_url)
+    
     # Get request body
     request_body = await request.json()
 

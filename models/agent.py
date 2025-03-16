@@ -20,6 +20,7 @@ class AgentBase(BaseModel):
     output_example: Optional[Any] = None
     credits_per_run: Optional[int] = 0
     workflow_id: Optional[str] = None
+    workflow_webhook_url: Optional[str] = None
     stars: Optional[int] = 0
     authentication: Optional[str] = None
     icon_svg: Optional[str] = None

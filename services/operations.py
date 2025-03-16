@@ -11,6 +11,7 @@ from models.human_in_the_loop import HumanInTheLoop, HumanInTheLoopCreate, Human
 from services.email import EmailService
 from supabase import create_client
 from services.agents import AgentService  
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +330,7 @@ class OperationService:
                     agent = agent_result.data[0]
                     agent_name = agent.get("title", {}).get("en", "Untitled Agent")
                     agent_endpoint_url = agent.get("agent_endpoint", "")  # Store the endpoint URL
+                    agent_webhook_url = agent.get("workflow_webhook_url", "")
                     webhook_url = None
 
                     # Check if the agent already has a workflow_id
@@ -353,7 +355,8 @@ class OperationService:
                             try:
                                 # Make sure this is properly awaited
                                 agent_update_result = self.supabase.table("agents")\
-                                    .update({"workflow_id": n8n_workflow_id})\
+                                    .update({"workflow_id": n8n_workflow_id,
+                                             "workflow_webhook_url": webhook_url })\
                                     .eq("id", operation_data["agent_id"])\
                                     .execute()
 
@@ -383,8 +386,8 @@ class OperationService:
                         logging.info(f"Agent {operation_data['agent_id']} already has workflow ID: {existing_workflow_id}")
                         operation_data["workflow_id"] = existing_workflow_id
 
-                        # Construct webhook URL using the existing workflow ID
-                        webhook_url = f"{self.n8n_url}/workflow/{existing_workflow_id}"
+                        # use agent_endpoint_url
+                        webhook_url = agent_webhook_url 
 
             # Create or update the operation in the database
             if operation_data.get("workflow_id"):
@@ -622,31 +625,21 @@ class OperationService:
 
             # Use httpx to call the scratchpads endpoint
             async with httpx.AsyncClient() as client:
-                headers = {
-                    "x-ngina-key": self.ngina_scratchpad_key,
-                }
+              
 
                 # Use the user's ID instead of a system ID
-                base_url = f"{self.ngina_url}/api/v1/scratchpads/{user_id}/{run_id}/{agent_id}"
+                base_url = f"{self.ngina_url}/api/v1/scratchpads/{user_id}/{run_id}/{agent_id}/json"
 
                 # Log request details for debugging
                 logging.info(f"Base scratchpad URL: {base_url} for user_id: {user_id}")
 
-                # First, store the original JSON results
-                json_str = json.dumps(result_data)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"results_{timestamp}.json"
-
-                # Create a multipart form with files field for the JSON
-                files = {
-                    "files": (filename, json_str, "application/json")
-                }
-
-                # Make POST request to the scratchpads endpoint with JSON file
+                # Send the JSON data directly, not as a file
                 response = await client.post(
                     base_url, 
-                    files=files,
-                    headers=headers
+                    json=result_data,  # Send as JSON payload directly
+                    headers={
+                        "x-ngina-key": self.ngina_scratchpad_key
+                    }
                 )
 
                 # Log response for debugging
@@ -738,6 +731,59 @@ class OperationService:
                     except Exception as e:
                         logging.error(f"Error processing URL {url}: {str(e)}")
 
+                # Update results json
+                try:
+                    # First, get the current record to check the existing results field
+                    current_record = self.supabase.table("agent_runs")\
+                        .select("results")\
+                        .eq("id", run_id)\
+                        .execute()
+
+                    if not current_record.data:
+                        logging.error(f"Could not find agent_run record with id {run_id} to update results")
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Agent run with id {run_id} not found"
+                        )
+
+                    # Get the current results field
+                    current_results = current_record.data[0].get("results", {})
+
+                    # Extract the resultJson from result_data
+                    new_result = result_data.get("resultJson", {})
+
+                    # If results is null or empty dict, initialize it
+                    if not current_results:
+                        updated_results = {"flow": [new_result]}
+                    else:
+                        # If flow array doesn't exist yet, create it
+                        if "flow" not in current_results:
+                            current_results["flow"] = []
+
+                        # Append the new result to the flow array
+                        current_results["flow"].append(new_result)
+                        updated_results = current_results
+
+                    # Update the record with the new results
+                    update_result = self.supabase.table("agent_runs")\
+                        .update({"results": updated_results})\
+                        .eq("id", run_id)\
+                        .execute()
+
+                    if not update_result.data:
+                        logging.error(f"Failed to update results for agent_run {run_id}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Failed to update agent run results"
+                        )
+
+                    logging.info(f"Successfully updated results for agent_run {run_id}")
+
+                except Exception as e:
+                    logging.error(f"Error updating agent run results: {str(e)}", exc_info=True)
+                    # Don't throw an exception here, as we want to continue with the rest of the function
+                    # Just log the error
+                
                 return {
                     "message": "Results successfully stored",
                     "run_id": run_id,
@@ -758,12 +804,10 @@ class OperationService:
         try:
             # Prepare the charge request
             charge_data = {
-                "amount": credits,
+                "credits": credits,
                 "description": f"Agent execution: {agent_title}",
-                "metadata": {
-                    "agent_id": agent_id,
-                    "run_id": run_id
-                }
+                "agent_id": agent_id,
+                "run_id": run_id               
             }
 
             # Call the accounting service to charge the user
