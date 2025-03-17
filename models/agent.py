@@ -22,6 +22,7 @@ class AgentBase(BaseModel):
     workflow_id: Optional[str] = None
     workflow_webhook_url: Optional[str] = None
     stars: Optional[int] = 0
+    content_extraction_file_extensions: Optional[str] = None
     authentication: Optional[str] = None
     icon_svg: Optional[str] = None
     wrapped_url: Optional[str] = None

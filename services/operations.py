@@ -645,10 +645,36 @@ class OperationService:
 
                 logging.info(f"Found {len(url_files_found)} URL properties to download")
 
+                # Content type filter (by file extension)
+                if agent and agent.content_extraction_file_extensions:
+                    allowed_extensions = [ext.strip() for ext in agent.content_extraction_file_extensions.split(',')]
+                else:
+                    # If no extensions specified, allow all files (or you could set a default)
+                    allowed_extensions = None
+
                 # Download and store each file separately
                 processed_files = []
                 for path, url in url_files_found:
                     try:
+                        # Extract file extension from URL
+                        url_lower = url.lower()
+                        # Find the last occurrence of a period after the last slash
+                        last_slash_index = url_lower.rfind('/')
+                        last_dot_index = url_lower.rfind('.')
+
+                        # Only process if there's a valid extension and it's after the last slash
+                        if last_dot_index > last_slash_index and last_dot_index != -1:
+                            file_extension = url_lower[last_dot_index:]
+
+                            # Skip if we have allowed extensions and this isn't one of them
+                            if allowed_extensions and file_extension not in allowed_extensions:
+                                logging.info(f"Skipping file from URL: {url} (extension {file_extension} not in allowed list: {allowed_extensions})")
+                                continue
+                        elif allowed_extensions:
+                            # No extension found but we're filtering by extension, so skip
+                            logging.info(f"Skipping file from URL: {url} (no file extension found)")
+                            continue
+                            
                         logging.info(f"Downloading file from URL: {url}")
 
                         # Download the file
