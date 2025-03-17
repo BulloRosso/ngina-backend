@@ -258,14 +258,14 @@ class AgentService:
                 .eq("id", agent_id)\
                 .execute()
 
-            logging.info(f"Supabase result: {result}")
+            # logging.info(f"Supabase result: {result}")
 
             if not result.data:
                 raise HTTPException(status_code=404, detail="Agent not found")
 
             try:
                 # Add debug logging for the data
-                logging.info(f"Raw agent data: {result.data[0]}")
+                # logging.info(f"Raw agent data: {result.data[0]}")
                 return Agent.model_validate(result.data[0])
             except ValidationError as e:
                 logging.error(f"Validation error: {str(e)}")
@@ -303,7 +303,7 @@ class AgentService:
                 .range(offset, offset + limit - 1)\
                 .execute()
 
-            logging.info(f"Raw data from Supabase: {result.data}")
+            # logging.info(f"Raw data from Supabase: {result.data}")
 
             agents = []
             for item in result.data:

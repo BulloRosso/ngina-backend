@@ -678,7 +678,9 @@ class OperationService:
                         file_post_response = await client.post(
                             base_url,
                             files=file_files,
-                            headers=headers
+                            headers={
+                                "x-ngina-key": self.ngina_scratchpad_key
+                            }
                         )
 
                         if file_post_response.status_code != 200:
@@ -699,6 +701,7 @@ class OperationService:
 
                 # Update results json
                 try:
+                    logger.info("*********** Updating RUN NOW *************")
                     # First, get the current record to check the existing results field
                     current_record = self.supabase.table("agent_runs")\
                         .select("results")\
@@ -716,7 +719,11 @@ class OperationService:
                     current_results = current_record.data[0].get("results", {})
 
                     # Extract the resultJson from result_data
-                    new_result = result_data.get("resultJson", {})
+                    new_result = {
+                       "executionId":  result_data.get("executionId", ""),
+                       "agentId": result_data.get("agentId", ""),
+                       "resultJson":  result_data.get("resultJson", {})
+                    }
 
                     # If results is null or empty dict, initialize it
                     if not current_results:
@@ -743,7 +750,7 @@ class OperationService:
                             detail="Failed to update agent run results"
                         )
 
-                    logging.info(f"Successfully updated results for agent_run {run_id}")
+                    logging.info(f"Successfully updated results for agent_run {run_id} with {new_result}")
 
                 except Exception as e:
                     logging.error(f"Error updating agent run results: {str(e)}", exc_info=True)
@@ -1225,8 +1232,7 @@ class OperationService:
             # Update the agent_runs table with status, finished_at and results
             update_data = {
                 "status": status,
-                "finished_at": now,
-                "results": debug_info
+                "finished_at": now
             }
 
             # Update the record in the database
