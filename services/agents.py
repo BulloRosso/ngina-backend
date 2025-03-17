@@ -372,6 +372,7 @@ class AgentService:
                 "credits_per_run": agent.credits_per_run,
                 "workflow_id": agent.workflow_id,
                 "stars": agent.stars,
+                "content_extraction_file_extensions": agent.content_extraction_file_extensions,
                 "authentication": agent.authentication,
                 "type": agent.type or "atom",
                 "icon_svg": agent.icon_svg,
