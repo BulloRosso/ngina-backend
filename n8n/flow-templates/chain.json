@@ -187,7 +187,7 @@
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ $input.first().json }}",
+        "body": "={{ \n{ \n  \"agentId\": $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].id ,\n  \"executionId\": $execution.id ,\n  \"resultJson\": $input.first().json\n}\n}}",
         "options": {
           "timeout": 100000
         }
@@ -207,7 +207,7 @@
         "url": "={{ $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"region\": \"Bavaria\",\n  \"min_price\": 100000\n}",
+        "jsonBody": "={{ $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].input }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
