@@ -311,7 +311,108 @@ class OperationService:
         except Exception as e:
             logging.error(f"Error getting operation by run_id: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to get operation by run_id: {str(e)}")
-            
+
+    async def add_authentication_to_payload(self, agent, user_id, payload):
+        """
+        Add authentication information to the agent run payload
+
+        Args:
+            agent: The agent object containing authentication settings
+            user_id: The user ID who owns the credentials
+            payload: The existing webhook payload to modify
+
+        Returns:
+            The modified payload with authentication headers
+        """
+        try:
+            # Default authentication (none)
+            header_name = 'x-ngina-auth-none'
+            header_value = '-'
+
+            # Check if the agent has authentication configured
+            if agent.authentication:
+                # Parse the authentication string
+                auth_parts = agent.authentication.split(':')
+                auth_type = auth_parts[0]
+
+                if auth_type == 'header' and len(auth_parts) >= 3:
+                    # Format: header:{header_name},{key_name}
+                    header_parts = ':'.join(auth_parts[1:]).split(',')
+                    if len(header_parts) >= 2:
+                        header_name = header_parts[0]
+                        key_name = header_parts[1]
+
+                        # Fetch the credential from secure_credentials table
+                        cred_result = self.supabase.table("secure_credentials")\
+                            .select("*")\
+                            .eq("user_id", str(user_id))\
+                            .eq("key_name", key_name)\
+                            .execute()
+
+                        if cred_result.data:
+                            credential = cred_result.data[0]
+                            header_value = credential.get("secret_key", "-")
+                            logging.info(f"Found credential for header authentication: {key_name}")
+                        else:
+                            logging.warning(f"No credential found for key_name: {key_name}")
+
+                elif auth_type == 'bearer-token' and len(auth_parts) >= 2:
+                    # Format: bearer-token:{key_name}
+                    key_name = auth_parts[1]
+                    header_name = 'Authorization'
+
+                    # Fetch the credential
+                    cred_result = self.supabase.table("secure_credentials")\
+                        .select("*")\
+                        .eq("user_id", str(user_id))\
+                        .eq("key_name", key_name)\
+                        .execute()
+
+                    if cred_result.data:
+                        credential = cred_result.data[0]
+                        token = credential.get("secret_key", "-")
+                        header_value = f"Bearer {token}"
+                        logging.info(f"Found credential for bearer token: {key_name}")
+                    else:
+                        logging.warning(f"No credential found for key_name: {key_name}")
+
+                elif auth_type == 'basic-auth' and len(auth_parts) >= 2:
+                    # Format: basic-auth:{key_name}
+                    key_name = auth_parts[1]
+                    header_name = 'Authorization'
+
+                    # Fetch the credential
+                    cred_result = self.supabase.table("secure_credentials")\
+                        .select("*")\
+                        .eq("user_id", str(user_id))\
+                        .eq("key_name", key_name)\
+                        .execute()
+
+                    if cred_result.data:
+                        credential = cred_result.data[0]
+                        token = credential.get("secret_key", "-")
+                        # Base64 encode the token
+                        import base64
+                        encoded_token = base64.b64encode(token.encode()).decode()
+                        header_value = f"Basic {encoded_token}"
+                        logging.info(f"Found credential for basic auth: {key_name}")
+                    else:
+                        logging.warning(f"No credential found for key_name: {key_name}")
+
+            # Update the payload with the authentication headers
+            if payload and isinstance(payload, dict) and "agents" in payload and len(payload["agents"]) > 0:
+                # Add authentication to each agent in the payload
+                for agent_payload in payload["agents"]:
+                    agent_payload["headerName"] = header_name
+                    agent_payload["headerValue"] = header_value
+
+            return payload
+
+        except Exception as e:
+            logging.error(f"Error adding authentication to payload: {str(e)}", exc_info=True)
+            # Return the original payload if there was an error
+            return payload
+    
     async def create_or_update_operation(self, operation_data: dict) -> Operation:
         try:
             agent_endpoint_url = None  # Initialize this to track the agent endpoint URL
@@ -417,6 +518,13 @@ class OperationService:
                             }
                         ]
                     }
+                    if agent:  # Make sure agent is available
+                        payload = await self.add_authentication_to_payload(
+                            agent=agent,
+                            user_id=operation_data.get("user_id", ""),
+                            payload=payload
+                        )
+                        
                     logging.info(f"Prepared webhook payload: {payload}")
                 else:
                     logging.warning("Missing required data for webhook payload")
