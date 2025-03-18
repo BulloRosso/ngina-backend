@@ -331,6 +331,7 @@ class OperationService:
 
             # Check if the agent has authentication configured
             if agent.authentication:
+                logger.info(f"Agent {agent.name} has authentication configured {agent.authentication}")
                 # Parse the authentication string
                 auth_parts = agent.authentication.split(':')
                 auth_type = auth_parts[0]
@@ -414,6 +415,9 @@ class OperationService:
             return payload
     
     async def create_or_update_operation(self, operation_data: dict) -> Operation:
+        
+        agent = None
+        
         try:
             agent_endpoint_url = None  # Initialize this to track the agent endpoint URL
 
@@ -426,7 +430,7 @@ class OperationService:
                     .execute()
 
                 if not agent_result.data:
-                    logging.warning(f"Agent with ID {operation_data['agent_id']} not found")
+                    raise HTTPException(status_code=500, detail=f"Agent id {operation_data['agent_id']} not found")
                 else:
                     agent = agent_result.data[0]
                     agent_name = agent.get("title", {}).get("en", "Untitled Agent")
@@ -518,14 +522,15 @@ class OperationService:
                             }
                         ]
                     }
-                    if agent:  # Make sure agent is available
-                        payload = await self.add_authentication_to_payload(
-                            agent=agent,
-                            user_id=operation_data.get("user_id", ""),
-                            payload=payload
-                        )
+                    logger.info("-------------Adding auth to playload")
+                    
+                    payload = await self.add_authentication_to_payload(
+                        agent=agent,
+                        user_id=operation_data.get("user_id", ""),
+                        payload=payload
+                    )
                         
-                    logging.info(f"Prepared webhook payload: {payload}")
+                    logging.info(f"-----------------Prepared webhook payload: {payload}")
                 else:
                     logging.warning("Missing required data for webhook payload")
                     # Create a minimal payload with just the run_id
