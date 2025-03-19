@@ -312,7 +312,7 @@ class OperationService:
             logging.error(f"Error getting operation by run_id: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to get operation by run_id: {str(e)}")
 
-    async def add_authentication_to_payload(self, agent, user_id, payload):
+    async def add_authentication_to_payload(self, agent_authentication, user_id, payload):
         """
         Add authentication information to the agent run payload
 
@@ -330,19 +330,19 @@ class OperationService:
             header_value = '-'
 
             # Check if the agent has authentication configured
-            if agent.authentication:
-                logger.info(f"Agent {agent.name} has authentication configured {agent.authentication}")
+            if agent_authentication:
+                logger.info(f"Agent has authentication configured {agent_authentication}")
                 # Parse the authentication string
-                auth_parts = agent.authentication.split(':')
+                auth_parts = agent_authentication.split(':')
                 auth_type = auth_parts[0]
 
-                if auth_type == 'header' and len(auth_parts) >= 3:
+                if auth_type == 'header':
                     # Format: header:{header_name},{key_name}
-                    header_parts = ':'.join(auth_parts[1:]).split(',')
+                    header_parts = auth_parts[1].split(',')
                     if len(header_parts) >= 2:
                         header_name = header_parts[0]
                         key_name = header_parts[1]
-
+                        logger.info(f"Using header {header_name} with key {key_name}")
                         # Fetch the credential from secure_credentials table
                         cred_result = self.supabase.table("secure_credentials")\
                             .select("*")\
@@ -436,6 +436,7 @@ class OperationService:
                     agent_name = agent.get("title", {}).get("en", "Untitled Agent")
                     agent_endpoint_url = agent.get("agent_endpoint", "")  # Store the endpoint URL
                     agent_webhook_url = agent.get("workflow_webhook_url", "")
+                    agent_authentication = agent.get("authentication", "")
                     webhook_url = None
 
                     # Check if the agent already has a workflow_id
@@ -525,7 +526,7 @@ class OperationService:
                     logger.info("-------------Adding auth to playload")
                     
                     payload = await self.add_authentication_to_payload(
-                        agent=agent,
+                        agent_authentication=agent_authentication,
                         user_id=operation_data.get("user_id", ""),
                         payload=payload
                     )
@@ -954,7 +955,9 @@ class OperationService:
                 logging.error("Cannot trigger workflow: webhook URL is empty")
                 return
 
-            logging.info(f"Triggering workflow webhook asynchronously: {webhook_url}")
+            local_payload = payload
+            
+            logging.info(f"Triggering workflow webhook asynchronously: {webhook_url} with payload: {local_payload}")
 
             # Use a default payload if none is provided
             if payload is None:
@@ -964,12 +967,12 @@ class OperationService:
                 }
 
             # Create a task to call the webhook without waiting for it to complete
-            async def call_webhook():
+            async def call_webhook(local_payload):
                 try:
                     async with httpx.AsyncClient() as client:
                         response = await client.post(
                             webhook_url,
-                            json=payload,
+                            json=local_payload,
                             timeout=5.0  # Short timeout since we don't care about the response
                         )
                         logging.info(f"Webhook trigger sent to {webhook_url}, status: {response.status_code}")
@@ -978,7 +981,7 @@ class OperationService:
 
             # Start the task without awaiting it
             import asyncio
-            asyncio.create_task(call_webhook())
+            asyncio.create_task(call_webhook(local_payload))
 
             logging.info(f"Webhook trigger task created for {webhook_url}")
         except Exception as e:

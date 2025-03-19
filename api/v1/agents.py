@@ -1,10 +1,12 @@
 # api/v1/agents.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional, Dict, Any
 from models.agent import Agent
 from pydantic import ValidationError, UUID4, BaseModel
 import logging
 from services.agents import AgentService, AgentTestRequest, SchemaGenerationRequest
+from dependencies.auth import get_current_user
+from uuid import UUID
 
 logger = logging.getLogger(__name__) 
 
@@ -50,11 +52,15 @@ async def discover_agent(data: Dict[str, str]):
     service = AgentService()
     return await service.discover_agent(data["agentDiscoveryUrl"])
 
-@router.post("/{agent_id}/test", response_model=Dict[str, Any], summary="Test an agent", description="Run a test execution of an agent with the provided input data", responses={200: {"description": "Agent test executed successfully"}, 400: {"description": "Invalid UUID format or input data"}, 404: {"description": "Agent not found"}, 422: {"description": "Validation error in request data"}, 502: {"description": "Error communicating with the agent"}, 504: {"description": "Agent execution timed out"}, 500: {"description": "Server error"}})
-async def test_agent(agent_id: str, test_data: AgentTestRequest):
+@router.post("/{agent_id}/test", 
+             response_model=Dict[str, Any], 
+             summary="Test an agent", 
+             description="Run a test execution of an agent with the provided input data", 
+             responses={200: {"description": "Agent test executed successfully"}, 400: {"description": "Invalid UUID format or input data"}, 404: {"description": "Agent not found"}, 422: {"description": "Validation error in request data"}, 502: {"description": "Error communicating with the agent"}, 504: {"description": "Agent execution timed out"}, 500: {"description": "Server error"}})
+async def test_agent(agent_id: str, test_data: AgentTestRequest, current_user: UUID = Depends(get_current_user)):
     try:
         service = AgentService()
-        return await service.test_agent(agent_id, test_data)
+        return await service.test_agent(agent_id, test_data, current_user)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format")
     except Exception as e:

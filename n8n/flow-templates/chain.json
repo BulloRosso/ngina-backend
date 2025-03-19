@@ -204,10 +204,20 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url }}",
+        "url": "={{$('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "={{ $('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerName }}",
+              "value": "={{$('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerValue}}"
+            }
+          ]
+        },
         "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].input }}",
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].input)}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

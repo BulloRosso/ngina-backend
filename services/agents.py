@@ -8,6 +8,7 @@ from pydantic import ValidationError, UUID4, BaseModel
 import os
 import httpx
 from genson import SchemaBuilder
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,102 @@ class AgentService:
                 detail=f"Agent did not respond: {str(e)}"
             )
 
-    async def test_agent(self, agent_id: str, test_data: AgentTestRequest) -> Dict[str, Any]:
+    async def authentication_headers(self, agent_authentication, user_id):
+        """
+        Get authentication headers for http request
+
+        Args:
+            agent: The agent object containing authentication settings
+            user_id: The user ID who owns the credentials
+
+        Returns:
+            The authentication headers
+        """
+        try:
+            # Default authentication (none)
+            header_name = 'x-ngina-auth-none'
+            header_value = '-'
+
+            # Check if the agent has authentication configured
+            if agent_authentication:
+                logger.info(f"Agent has authentication configured {agent_authentication}")
+                # Parse the authentication string
+                auth_parts = agent_authentication.split(':')
+                auth_type = auth_parts[0]
+
+                if auth_type == 'header':
+                    # Format: header:{header_name},{key_name}
+                    header_parts = auth_parts[1].split(',')
+                    if len(header_parts) >= 2:
+                        header_name = header_parts[0]
+                        key_name = header_parts[1]
+                        logger.info(f"Using header {header_name} with key {key_name}")
+                        # Fetch the credential from secure_credentials table
+                        cred_result = self.supabase.table("secure_credentials")\
+                            .select("*")\
+                            .eq("user_id", str(user_id))\
+                            .eq("key_name", key_name)\
+                            .execute()
+
+                        if cred_result.data:
+                            credential = cred_result.data[0]
+                            header_value = credential.get("secret_key", "-")
+                            logging.info(f"Found credential for header authentication: {key_name}")
+                        else:
+                            logging.warning(f"No credential found for key_name: {key_name}")
+
+                elif auth_type == 'bearer-token' and len(auth_parts) >= 2:
+                    # Format: bearer-token:{key_name}
+                    key_name = auth_parts[1]
+                    header_name = 'Authorization'
+
+                    # Fetch the credential
+                    cred_result = self.supabase.table("secure_credentials")\
+                        .select("*")\
+                        .eq("user_id", str(user_id))\
+                        .eq("key_name", key_name)\
+                        .execute()
+
+                    if cred_result.data:
+                        credential = cred_result.data[0]
+                        token = credential.get("secret_key", "-")
+                        header_value = f"Bearer {token}"
+                        logging.info(f"Found credential for bearer token: {key_name}")
+                    else:
+                        logging.warning(f"No credential found for key_name: {key_name}")
+
+                elif auth_type == 'basic-auth' and len(auth_parts) >= 2:
+                    # Format: basic-auth:{key_name}
+                    key_name = auth_parts[1]
+                    header_name = 'Authorization'
+
+                    # Fetch the credential
+                    cred_result = self.supabase.table("secure_credentials")\
+                        .select("*")\
+                        .eq("user_id", str(user_id))\
+                        .eq("key_name", key_name)\
+                        .execute()
+
+                    if cred_result.data:
+                        credential = cred_result.data[0]
+                        token = credential.get("secret_key", "-")
+                        # Base64 encode the token
+                        import base64
+                        encoded_token = base64.b64encode(token.encode()).decode()
+                        header_value = f"Basic {encoded_token}"
+                        logging.info(f"Found credential for basic auth: {key_name}")
+                    else:
+                        logging.warning(f"No credential found for key_name: {key_name}")
+
+            return header_name, header_value 
+
+        except Exception as e:
+            logging.error(f"Error adding authentication to payload: {str(e)}", exc_info=True)
+            # Return the original payload if there was an error
+            return None, None 
+
+    
+    async def test_agent(self, agent_id: str, test_data: AgentTestRequest, user_id: UUID) -> Dict[str, Any]:
         try:
             logger.info(f"Testing agent {agent_id} with test data: {test_data}")
 
@@ -185,21 +281,24 @@ class AgentService:
             # Make the request to the agent endpoint
             async with httpx.AsyncClient() as client:
                 
-                endpoint = agent.agent_endpoint
-                if "/wrapper/" in endpoint:
-                    endpoint = agent.workflow_id
+                endpoint = agent.wrapped_url
 
                 logger.info(f"*** ENDPOINT {endpoint}")
                 
                 try:
-                    logger.info(f"Calling agent endpoint {agent.agent_endpoint} with data {test_data.input}")
+                    logger.info(f"*** passing data {test_data.input}")
 
+                    header_name, header_value = await self.authentication_headers(agent.authentication, user_id)
+
+                    logger.info(f"*** header: {header_name} = {header_value}")
+                    
                     response = await client.post(
-                        agent.agent_endpoint,
+                        endpoint,
                         json=test_data.input,
                         headers={
                             "Accept": "application/json",
-                            "Content-Type": "application/json"
+                            "Content-Type": "application/json",
+                            header_name: header_value
                         },
                         timeout=float(agent.max_execution_time_secs or 30.0)
                     )
