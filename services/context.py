@@ -5,7 +5,7 @@ from models.context import AgentContext
 from services.agents import AgentService
 from supabase import create_client
 import logging
-from pydantic import UUID4
+from uuid import UUID
 import os
 import json
 from pathlib import Path
@@ -316,3 +316,137 @@ class ContextService:
         except Exception as e:
             logger.error(f"Error in prompt to JSON conversion: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to convert prompt to JSON: {str(e)}")
+
+    async def get_agent_input_from_env(self, agent_id: UUID, run_id: UUID, x_ngina_key: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Extract agent input from runtime environment.
+
+        Args:
+            agent_id: UUID of the agent
+            run_id: UUID of the run
+            x_ngina_key: API key for authentication
+
+        Returns:
+            Dictionary containing success flag, optional message, and input JSON if successful
+        """
+        try:
+            # 1. Load the runtime environment from agent_runs table
+            # Validate API key
+            workflow_key = os.getenv("NGINA_WORKFLOW_KEY")
+            if not workflow_key or x_ngina_key != workflow_key:
+                raise HTTPException(status_code=403, detail="Invalid or missing API key")
+
+            # Get the run data from Supabase
+            result = self.supabase.table("agent_runs").select("*").eq("id", str(run_id)).execute()
+
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Run not found")
+
+            run_data = result.data[0]
+
+            # Extract the results field which contains the runtime environment
+            runtime_env = run_data.get("results", {})
+
+            if not runtime_env:
+                logger.warning(f"Run {run_id} has no results data")
+                return {
+                    "success": False,
+                    "message": "No runtime environment data available for this run"
+                }
+
+            # 2. Load the agent
+            agent_service = AgentService()
+            agent = await agent_service.get_agent(str(agent_id))
+
+            if not agent.input:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Agent doesn't have an input schema defined"
+                )
+
+            # 3. Load the prompt template
+            try:
+                prompt_path = Path("prompts/get-agent-input-from-env.md")
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    prompt_template = f.read()
+            except Exception as e:
+                logger.error(f"Failed to load input extraction prompt template: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to load input extraction prompt template"
+                )
+
+            # 4. Replace placeholders in the prompt
+            formatted_prompt = prompt_template.replace("{agent.input}", json.dumps(agent.input, indent=2))
+            formatted_prompt = formatted_prompt.replace("{runtime-env}", json.dumps(runtime_env, indent=2))
+
+            # 5. Call the OpenAI API with gpt-4o-mini model
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": formatted_prompt
+                    }
+                ],
+                temperature=0.2  # Lower temperature for more deterministic outputs
+            )
+
+            # Extract the response text
+            response_text = response.choices[0].message.content.strip()
+
+            # 6. Parse the response as JSON
+            try:
+                result = json.loads(response_text)
+
+                # Validate that the result has the expected format
+                if "success" not in result:
+                    logger.error(f"LLM response missing 'success' field: {response_text}")
+                    return {
+                        "success": False,
+                        "message": "Invalid response format from LLM: missing 'success' field"
+                    }
+
+                if result["success"] and "input" not in result:
+                    logger.error(f"LLM successful response missing 'input' field: {response_text}")
+                    return {
+                        "success": False,
+                        "message": "Invalid response format from LLM: successful response missing 'input' field"
+                    }
+
+                if not result["success"] and "message" not in result:
+                    logger.error(f"LLM error response missing 'message' field: {response_text}")
+                    return {
+                        "success": False,
+                        "message": "Invalid response format from LLM: error response missing 'message' field"
+                    }
+
+                # If successful, validate that all required fields are present in the input
+                if result["success"]:
+                    missing_fields = self.validate_required_fields(agent.input, result["input"])
+
+                    if missing_fields:
+                        logger.warning(f"Missing required fields in extracted input: {missing_fields}")
+                        return {
+                            "success": False,
+                            "message": f"Extracted input is missing required fields: {', '.join(missing_fields)}"
+                        }
+
+                return result
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM response as JSON: {response_text}")
+                return {
+                    "success": False,
+                    "message": "LLM generated invalid JSON. Please try again."
+                }
+
+        except HTTPException as e:
+            # Propagate HTTP exceptions with their status codes
+            raise
+        except Exception as e:
+            logger.error(f"Error extracting agent input from environment: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed to extract agent input: {str(e)}"
+            }

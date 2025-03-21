@@ -1,6 +1,7 @@
 # models/context.py
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, UUID4, RootModel
+from uuid import UUID
 
 class AgentContext(BaseModel):
     """Model representing the context of a single agent."""
@@ -24,3 +25,8 @@ class PromptToJsonRequest(BaseModel):
     """Request model for prompt to JSON conversion."""
     prompt: str
     one_shot: bool = True
+
+class GetAgentInputFromEnvRequest(BaseModel):
+    """Request model for extracting agent input from environment."""
+    agent_id: UUID
+    run_id: UUID

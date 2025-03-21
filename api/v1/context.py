@@ -1,10 +1,11 @@
 # api/v1/context.py
 from fastapi import APIRouter, HTTPException, Header, Depends, Response
 from typing import Dict, Any, Optional
-from models.context import BuildContextRequest, AgentContext, PromptToJsonRequest
+from models.context import BuildContextRequest, AgentContext, PromptToJsonRequest, GetAgentInputFromEnvRequest
 from services.context import ContextService
 import logging
 from fastapi.responses import JSONResponse
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -69,3 +70,39 @@ async def prompt_to_json(agent_id: str, request: PromptToJsonRequest):
     service = ContextService()
     result = await service.prompt_to_json(agent_id, request.prompt, request.one_shot)
     return JSONResponse(content=result)
+
+@router.post("/resolvers/get-agent-input-from-env",
+     response_class=JSONResponse,
+     summary="Extract agent input from runtime environment",
+     description="Search the runtime environment for required input parameters for an agent with a defined input schema",
+     responses={
+        200: {"description": "Agent input successfully extracted from environment"},
+        400: {"description": "Failed to extract required input parameters"},
+        403: {"description": "Invalid or missing API key"},
+        404: {"description": "Agent or run not found"},
+        500: {"description": "Server error during input extraction"}
+     })
+async def get_agent_input_from_env(request: GetAgentInputFromEnvRequest, x_ngina_key: Optional[str] = Header(None)):
+    """
+    Extract agent input from runtime environment.
+
+    Args:
+        request: Contains agent_id and run_id
+        x_ngina_key: API key for authentication
+
+    Returns:
+        Extracted input parameters as JSON if successful, error message if not
+    """
+    service = ContextService()
+    result = await service.get_agent_input_from_env(request.agent_id, request.run_id, x_ngina_key)
+
+    # Check if the operation was successful
+    if result.get("success", False):
+        # Return just the input object with 200 status
+        return JSONResponse(content=result["input"])
+    else:
+        # Return the full ORET response with 400 status
+        return JSONResponse(
+            status_code=400,
+            content=result
+        )
