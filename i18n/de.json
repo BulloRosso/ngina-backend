@@ -7,15 +7,15 @@
         "greeting": "Hallo!"
     },
     "account_verification": {
-        "subject": "Verifizieren Sie Ihr Noblivion-Konto",
-        "header_title": "Willkommen bei Noblivion!",
-        "verification_message": "Vielen Dank, dass Sie sich bei Noblivion registriert haben. Bitte verifizieren Sie Ihr Konto mit diesem Code:",
+        "subject": "Verifizieren Sie Ihr nginA-Konto",
+        "header_title": "Willkommen bei nginA!",
+        "verification_message": "Vielen Dank, dass Sie sich bei nginA registriert haben. Bitte verifizieren Sie Ihr Konto mit diesem Code:",
         "expiry_notice": "Dieser Verifizierungscode läuft in 24 Stunden ab.",
         "instructions": "Geben Sie diesen Code im Verifizierungsfenster ein, um Ihr Konto zu aktivieren und mit der Bewahrung Ihrer wertvollen Erinnerungen zu beginnen."
     },
     "email_confirmation": {
-        "subject": "Bestätigen Sie Ihr Noblivion-Konto",
-        "header_title": "Willkommen bei Noblivion!",
+        "subject": "Bestätigen Sie Ihr nginA-Konto",
+        "header_title": "Willkommen bei nginA!",
         "confirmation_message": "Vielen Dank für die Erstellung Ihres Kontos. Bitte klicken Sie auf den Button unten, um Ihre E-Mail-Adresse zu bestätigen:",
         "confirm_button": "E-Mail-Adresse bestätigen",
         "ignore_message": "Wenn Sie kein Konto erstellt haben, können Sie diese E-Mail ignorieren."
@@ -45,7 +45,7 @@
         "extension_note": "Benötigen Sie mehr Zeit? Kontaktieren Sie die Person, die Sie eingeladen hat, um eine Verlängerung anzufordern."
     },
     "password_reset": {
-        "subject": "Setzen Sie Ihr Noblivion-Passwort zurück",
+        "subject": "Setzen Sie Ihr nginA-Passwort zurück",
         "header_title": "Passwort zurücksetzen",
         "reset_message": "Wir haben eine Anfrage erhalten, Ihr Passwort zurückzusetzen. Wenn Sie diese Anfrage nicht gestellt haben, können Sie diese E-Mail ignorieren.",
         "reset_button": "Passwort zurücksetzen",

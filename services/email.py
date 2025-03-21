@@ -95,7 +95,7 @@ class EmailService:
 
             # Add common variables
             common_vars = {
-                'logo_url': f"{self.frontend_url}/conch-logo-small.png",
+                'logo_url': f"{self.frontend_url}/img/title-logo.png",
                 't': translate,  # Translation function
                 'frontend_url': self.frontend_url,
                 **kwargs  # Add all template variables to the root context
@@ -146,7 +146,7 @@ class EmailService:
             mail_body = {}
 
             mail_from = {
-                "name": "Noblivion",
+                "name": "nginA",
                 "email": self.sender_domain
             }
             self.mailer.set_mail_from(mail_from, mail_body)

@@ -7,15 +7,15 @@
         "greeting": "Hello!"
     },
     "account_verification": {
-        "subject": "Verify your Noblivion account",
-        "header_title": "Welcome to Noblivion!",
-        "verification_message": "Thank you for joining Noblivion. To complete your registration, please verify your account using this code:",
+        "subject": "Verify your nginA account",
+        "header_title": "Welcome to nginA!",
+        "verification_message": "Thank you for joining nginA. To complete your registration, please verify your account using this code:",
         "expiry_notice": "This verification code will expire in 24 hours.",
         "instructions": "Enter this code in the verification window to activate your account and start preserving your precious memories."
     },
     "email_confirmation": {
-        "subject": "Confirm your Noblivion account",
-        "header_title": "Welcome to Noblivion!",
+        "subject": "Confirm your nginA account",
+        "header_title": "Welcome to nginA!",
         "confirmation_message": "Thank you for creating an account. Please click the button below to confirm your email address:",
         "confirm_button": "Confirm Email Address",
         "ignore_message": "If you did not create an account, you can safely ignore this email."
@@ -44,7 +44,7 @@
         "extension_note": "Need more time? Contact the person who invited you to request an extension."
     },
     "password_reset": {
-        "subject": "Reset Your Noblivion Password",
+        "subject": "Reset Your nginA Password",
         "header_title": "Reset Your Password",
         "reset_message": "We received a request to reset your password. If you didn't make this request, you can safely ignore this email.",
         "reset_button": "Reset Password",
