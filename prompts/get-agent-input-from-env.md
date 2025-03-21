@@ -10,6 +10,7 @@ Here is the available context from the runtime environment:
 
 # Task
 Your task is to analyze the runtime environment context and extract values that match the requirements of the agent's input schema. Look for data that semantically matches what the agent needs. Consider all available fields in the context, including nested objects.
+Do not assume default values or make up values.
 
 # Response Format
 Format your response as a JSON object with the following structure:

@@ -389,7 +389,7 @@ class ContextService:
                         "content": formatted_prompt
                     }
                 ],
-                temperature=0.2  # Lower temperature for more deterministic outputs
+                temperature=0.1 # Lower temperature for more deterministic outputs
             )
 
             # Extract the response text
@@ -450,3 +450,121 @@ class ContextService:
                 "success": False,
                 "message": f"Failed to extract agent input: {str(e)}"
             }
+
+    async def get_agent_input_transformer_from_env(self, agent_id: UUID, run_id: UUID, x_ngina_key: Optional[str] = None) -> str:
+        """
+        Generate a JavaScript transformer function that extracts agent input from environment.
+    
+        Args:
+            agent_id: UUID of the agent
+            run_id: UUID of the run
+            x_ngina_key: API key for authentication
+    
+        Returns:
+            ES6 JavaScript function as a string
+        """
+        try:
+            # 1. Validate API key
+            workflow_key = os.getenv("NGINA_WORKFLOW_KEY")
+            if not workflow_key or x_ngina_key != workflow_key:
+                raise HTTPException(status_code=403, detail="Invalid or missing API key")
+    
+            # 2. Get the run data from Supabase
+            result = self.supabase.table("agent_runs").select("*").eq("id", str(run_id)).execute()
+    
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Run not found")
+    
+            run_data = result.data[0]
+    
+            # Extract the results field which contains the runtime environment
+            runtime_env = run_data.get("results", {})
+    
+            if not runtime_env:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="No runtime environment data available for this run"
+                )
+    
+            # 3. Load the agent
+            agent_service = AgentService()
+            agent = await agent_service.get_agent(str(agent_id))
+    
+            if not agent.input:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Agent doesn't have an input schema defined"
+                )
+    
+            # 4. Load the prompt template
+            try:
+                prompt_path = Path("prompts/get-agent-input-transformer-from-env.md")
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    prompt_template = f.read()
+            except Exception as e:
+                logger.error(f"Failed to load transformer function prompt template: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to load transformer function prompt template"
+                )
+    
+            # 5. Replace placeholders in the prompt
+            formatted_prompt = prompt_template.replace("{agent.input}", json.dumps(agent.input, indent=2))
+            formatted_prompt = formatted_prompt.replace("{runtime-env}", json.dumps(runtime_env, indent=2))
+    
+            # 6. Call the OpenAI API (using a more capable model for code generation)
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": formatted_prompt
+                    }
+                ],
+                temperature=0.2  # Lower temperature for more deterministic outputs
+            )
+    
+            # Extract the response text
+            transformer_function = response.choices[0].message.content.strip()
+    
+            # Check if the response starts with ```javascript and ends with ```
+            if transformer_function.startswith("```javascript") or transformer_function.startswith("```js"):
+                # Extract the code between the backticks
+                transformer_function = transformer_function.split("```")[1]
+                if transformer_function.startswith("javascript") or transformer_function.startswith("js"):
+                    transformer_function = transformer_function[transformer_function.find("\n"):]
+    
+            elif transformer_function.startswith("```") and transformer_function.endswith("```"):
+                # Extract the code between the backticks
+                transformer_function = transformer_function[3:-3]
+    
+            # Clean up the function by removing any extra text
+            # Check if it contains a function declaration
+            function_start = transformer_function.find("function transform")
+            if function_start != -1:
+                transformer_function = transformer_function[function_start:]
+    
+            # Check for const/let transform =
+            const_start = transformer_function.find("const transform")
+            if const_start != -1:
+                transformer_function = transformer_function[const_start:]
+    
+            let_start = transformer_function.find("let transform")
+            if let_start != -1:
+                transformer_function = transformer_function[let_start:]
+    
+            # Make sure the function ends properly
+            if transformer_function.strip() and not transformer_function.strip().endswith(";"):
+                # Add a semicolon if missing
+                transformer_function = transformer_function.rstrip() + ";"
+    
+            return transformer_function.strip()
+    
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error generating transformer function: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to generate transformer function: {str(e)}"
+            )

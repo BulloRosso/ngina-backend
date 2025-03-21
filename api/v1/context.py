@@ -106,3 +106,34 @@ async def get_agent_input_from_env(request: GetAgentInputFromEnvRequest, x_ngina
             status_code=400,
             content=result
         )
+
+
+@router.post("/resolvers/get-agent-input-transformer-from-env",
+     response_model=str,
+     summary="Generate input transformer function",
+     description="Generate a JavaScript function that transforms the environment into the required agent input format",
+     responses={
+        200: {"description": "Transformer function generated successfully"},
+        400: {"description": "Failed to generate transformer function"},
+        403: {"description": "Invalid or missing API key"},
+        404: {"description": "Agent or run not found"},
+        500: {"description": "Server error during transformer function generation"}
+     })
+async def get_agent_input_transformer_from_env(request: GetAgentInputFromEnvRequest, x_ngina_key: Optional[str] = Header(None)):
+    """
+    Generate a JavaScript transformer function that extracts agent input from environment.
+    
+    Args:
+        request: Contains agent_id and run_id
+        x_ngina_key: API key for authentication
+    
+    Returns:
+    ES6 JavaScript function as a string
+    """
+    service = ContextService()
+    transformer_function = await service.get_agent_input_transformer_from_env(request.agent_id, request.run_id, x_ngina_key)
+    
+    return Response(
+        content=transformer_function,
+        media_type="application/javascript"
+        )
