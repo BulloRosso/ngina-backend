@@ -1,15 +1,24 @@
 # api/v1/context.py
 from fastapi import APIRouter, HTTPException, Header, Depends, Response
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from models.context import BuildContextRequest, AgentContext, PromptToJsonRequest, GetAgentInputFromEnvRequest
 from services.context import ContextService
 import logging
 from fastapi.responses import JSONResponse
 from uuid import UUID
+import random
+from pydantic import BaseModel
+from services.context import ContextService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/context", tags=["context"])
+
+# Request model for chain simulation
+class ChainSimulationRequest(BaseModel):
+    prompt: str
+    agents: List[str]
+
 
 @router.post("/builder", 
              response_model=str, 
@@ -136,4 +145,43 @@ async def get_agent_input_transformer_from_env(request: GetAgentInputFromEnvRequ
     return Response(
         content=transformer_function,
         media_type="application/javascript"
+        )
+
+@router.post("/simulation/chain/env/{agent_id}",
+     response_class=JSONResponse,
+     summary="Simulate chain environment",
+     description="Simulate a chain environment with previous agents' outputs",
+     responses={
+        200: {"description": "Chain environment simulation successful"},
+        400: {"description": "Invalid request parameters"},
+        404: {"description": "Agent not found"},
+        500: {"description": "Server error during simulation"}
+     })
+async def simulate_chain_environment(agent_id: str, request: ChainSimulationRequest):
+    """
+    Simulate a chain environment with previous agents' outputs.
+
+    Args:
+        agent_id: ID of the agent to simulate for
+        request: Contains prompt and array of previous agents in the chain
+
+    Returns:
+        Simulated chain environment with input parameters and flow data
+    """
+    try:
+        # Use the service to handle the simulation
+        service = ContextService()
+        response = await service.simulate_chain_environment(agent_id, request.prompt, request.agents)
+
+        # Return the simulation data
+        return JSONResponse(content=response)
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error simulating chain environment: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to simulate chain environment: {str(e)}"
         )

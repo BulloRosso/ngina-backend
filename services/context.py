@@ -451,6 +451,64 @@ class ContextService:
                 "message": f"Failed to extract agent input: {str(e)}"
             }
 
+    async def simulate_chain_environment(self, agent_id: str, prompt: str, chain_agent_ids: List[str]) -> Dict[str, Any]:
+        """
+        Simulate a chain environment with previous agents' outputs.
+
+        Args:
+            agent_id: ID of the agent to simulate for
+            prompt: The initial prompt text
+            chain_agent_ids: Array of previous agents in the chain
+
+        Returns:
+            Simulated chain environment with input parameters and flow data
+        """
+        try:
+            # Get the agent service
+            agent_service = AgentService()  # Create a new instance, no need to access self.agent_service
+
+            # Initialize response structure
+            response = {
+                "prompt": prompt,
+                "inputParameters": {},
+                "flow": []
+            }
+
+            # Process agents in the chain
+            for idx, chain_agent_id in enumerate(chain_agent_ids):
+                try:
+                    # Get the agent data
+                    chain_agent = await agent_service.get_agent(chain_agent_id)
+
+                    # If this is the first agent, use its input_example for inputParameters
+                    if idx == 0 and chain_agent.input_example:
+                        response["inputParameters"] = chain_agent.input_example
+
+                    # Generate random execution ID
+                    execution_id = str(random.randint(200, 1522))
+
+                    # Add to flow with output_example as resultJson
+                    flow_item = {
+                        "agentId": chain_agent_id,
+                        "resultJson": chain_agent.output_example or {},
+                        "executionId": execution_id
+                    }
+
+                    response["flow"].append(flow_item)
+
+                except Exception as e:
+                    logger.warning(f"Error processing agent {chain_agent_id} in chain: {str(e)}")
+                    # Continue with next agent even if one fails
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error simulating chain environment: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to simulate chain environment: {str(e)}"
+            )
+    
     async def get_agent_input_transformer_from_env(self, agent_id: UUID, run_id: UUID, x_ngina_key: Optional[str] = None) -> str:
         """
         Generate a JavaScript transformer function that extracts agent input from environment.
