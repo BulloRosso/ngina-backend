@@ -8,6 +8,7 @@ import logging
 from uuid import UUID
 import os
 import json
+import random
 from pathlib import Path
 from openai import OpenAI
 
@@ -487,10 +488,31 @@ class ContextService:
                     # Generate random execution ID
                     execution_id = str(random.randint(200, 1522))
 
-                    # Add to flow with output_example as resultJson
+                    # Debug log to see what output_example contains
+                    logger.debug(f"Agent {chain_agent_id} output_example: {chain_agent.output_example}")
+
+                    # Add to flow with output_example as resultJson, ensuring it's properly retrieved
+                    output_example = {}
+
+                    # Check if output_example exists and is properly formatted
+                    if hasattr(chain_agent, 'output_example') and chain_agent.output_example:
+                        # If it's a dictionary or can be converted to one, use it
+                        if isinstance(chain_agent.output_example, dict):
+                            output_example = chain_agent.output_example
+                        elif hasattr(chain_agent.output_example, "__dict__"):
+                            # If it's an object with a __dict__ attribute, convert to dict
+                            output_example = chain_agent.output_example.__dict__
+                        else:
+                            # Try to convert to dict if it's a string that might be JSON
+                            try:
+                                if isinstance(chain_agent.output_example, str):
+                                    output_example = json.loads(chain_agent.output_example)
+                            except:
+                                logger.warning(f"Could not convert output_example to dict for agent {chain_agent_id}")
+
                     flow_item = {
                         "agentId": chain_agent_id,
-                        "resultJson": chain_agent.output_example or {},
+                        "resultJson": output_example,
                         "executionId": execution_id
                     }
 
