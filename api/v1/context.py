@@ -24,6 +24,10 @@ class ChainMagicRequest(BaseModel):
     agents: List[str]
     connector_prompt: str
 
+class ChainCodeRequest(BaseModel):
+    prompt: str
+    agents: List[str]
+    connector_prompt: str
     
 @router.post("/builder", 
              response_model=str, 
@@ -238,4 +242,40 @@ async def simulate_chain_magic(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to simulate chain magic: {str(e)}"
+        )
+
+@router.post("/simulation/chain/code/{agent_id}")
+async def generate_chain_code(
+    agent_id: str,
+    request: ChainCodeRequest,
+    x_ngina_key: Optional[str] = Header(None)
+):
+    """
+    Generate JavaScript transformer code for connecting agents in a chain.
+    """
+    try:
+        # Create context service
+        service = ContextService()
+
+        # Call the service method to generate code
+        code = await service.generate_transformer_code(
+            agent_id,
+            request.prompt,
+            request.agents,
+            request.connector_prompt
+        )
+
+        # Return the generated code
+        return {
+            "code": code
+        }
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error generating chain code: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate chain code: {str(e)}"
         )

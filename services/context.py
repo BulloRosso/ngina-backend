@@ -649,6 +649,92 @@ class ContextService:
                 detail=f"Failed to generate transformer function: {str(e)}"
             )
 
+    async def generate_transformer_code(self, agent_id: str, prompt: str, chain_agent_ids: List[str], connector_prompt: str) -> str:
+        """
+        Generate JavaScript transformer code using the guided template and environment data.
+
+        Args:
+            agent_id: ID of the agent to generate code for
+            prompt: The initial prompt text
+            chain_agent_ids: List of previous agents in the chain
+            connector_prompt: Instructions for transforming data between agents
+
+        Returns:
+            Generated JavaScript code as a string
+        """
+        try:
+            # 1. Get the environment data
+            environment = await self.simulate_chain_environment(
+                agent_id, 
+                prompt, 
+                chain_agent_ids
+            )
+
+            # 2. Load the agent to get its input schema
+            agent = await self.agent_service.get_agent(agent_id)
+
+            if not agent.input:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Agent doesn't have an input schema defined"
+                )
+
+            # 3. Load the guided transformer template
+            try:
+                prompt_path = Path("prompts/guided-agent-input-transformer-from-env.md")
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    prompt_template = f.read()
+            except Exception as e:
+                logger.error(f"Failed to load guided transformer prompt template: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to load guided transformer prompt template"
+                )
+
+            # 4. Replace placeholders in the prompt
+            formatted_prompt = prompt_template.replace("{agent.input}", json.dumps(agent.input, indent=2))
+            formatted_prompt = formatted_prompt.replace("{runtime-env}", json.dumps(environment, indent=2))
+            formatted_prompt = formatted_prompt.replace("{prompt}", connector_prompt)
+
+            # 5. Call the OpenAI API
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": formatted_prompt
+                    }
+                ],
+                temperature=0.1  # Lower temperature for more deterministic outputs
+            )
+
+            # Extract the response text
+            transformer_code = response.choices[0].message.content.strip()
+
+            # 6. Clean up the code
+            # Check if the response starts with ```javascript and ends with ```
+            if transformer_code.startswith("```javascript") or transformer_code.startswith("```js"):
+                # Extract the code between the backticks
+                transformer_code = transformer_code.split("```")[1]
+                if transformer_code.startswith("javascript") or transformer_code.startswith("js"):
+                    transformer_code = transformer_code[transformer_code.find("\n"):]
+
+            elif transformer_code.startswith("```") and transformer_code.endswith("```"):
+                # Extract the code between the backticks
+                transformer_code = transformer_code[3:-3]
+
+            return transformer_code.strip()
+
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Error generating transformer code: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to generate transformer code: {str(e)}"
+            )
+    
     async def simulate_chain_magic(self, agent_id: str, prompt: str, chain_agent_ids: List[str], connector_prompt: str) -> Dict[str, Any]:
         """
         Simulate a magic connector transformation by using AI to extract agent input from environment.
