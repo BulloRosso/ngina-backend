@@ -648,3 +648,122 @@ class ContextService:
                 status_code=500, 
                 detail=f"Failed to generate transformer function: {str(e)}"
             )
+
+    async def simulate_chain_magic(self, agent_id: str, prompt: str, chain_agent_ids: List[str], connector_prompt: str) -> Dict[str, Any]:
+        """
+        Simulate a magic connector transformation by using AI to extract agent input from environment.
+    
+        Args:
+            agent_id: ID of the agent to generate input for
+            prompt: The initial prompt text
+            chain_agent_ids: List of previous agents in the chain
+            connector_prompt: Instructions for transforming data between agents
+    
+        Returns:
+            If successful, the input object for the agent.
+            If unsuccessful, error details.
+        """
+        try:
+            # 1. Get the environment data
+            environment = await self.simulate_chain_environment(
+                agent_id, 
+                prompt, 
+                chain_agent_ids
+            )
+    
+            # 2. Load the agent to get its input schema
+            agent = await self.agent_service.get_agent(agent_id)
+    
+            if not agent.input:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Agent doesn't have an input schema defined"
+                )
+    
+            # 3. Load the guided prompt template
+            try:
+                prompt_path = Path("prompts/guided-agent-input-from-env.md")
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    prompt_template = f.read()
+            except Exception as e:
+                logger.error(f"Failed to load guided input extraction prompt template: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to load guided input extraction prompt template"
+                )
+    
+            # 4. Replace placeholders in the prompt
+            formatted_prompt = prompt_template.replace("{agent.input}", json.dumps(agent.input, indent=2))
+            formatted_prompt = formatted_prompt.replace("{runtime-env}", json.dumps(environment, indent=2))
+            formatted_prompt = formatted_prompt.replace("{prompt}", connector_prompt)
+    
+            # 5. Call the OpenAI API
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": formatted_prompt
+                    }
+                ],
+                temperature=0.1  # Lower temperature for more deterministic outputs
+            )
+    
+            # Extract the response text
+            response_text = response.choices[0].message.content.strip()
+    
+            # 6. Parse the response as JSON
+            try:
+                result = json.loads(response_text)
+    
+                # Validate that the result has the expected format
+                if "success" not in result:
+                    logger.error(f"LLM response missing 'success' field: {response_text}")
+                    return {
+                        "success": False,
+                        "message": "Invalid response format from LLM: missing 'success' field"
+                    }
+    
+                if result["success"] and "input" not in result:
+                    logger.error(f"LLM successful response missing 'input' field: {response_text}")
+                    return {
+                        "success": False,
+                        "message": "Invalid response format from LLM: successful response missing 'input' field"
+                    }
+    
+                if not result["success"] and "message" not in result:
+                    logger.error(f"LLM error response missing 'message' field: {response_text}")
+                    return {
+                        "success": False,
+                        "message": "Invalid response format from LLM: error response missing 'message' field"
+                    }
+    
+                # If successful, validate that all required fields are present in the input
+                if result["success"]:
+                    missing_fields = self.validate_required_fields(agent.input, result["input"])
+    
+                    if missing_fields:
+                        logger.warning(f"Missing required fields in extracted input: {missing_fields}")
+                        return {
+                            "success": False,
+                            "message": f"Extracted input is missing required fields: {', '.join(missing_fields)}"
+                        }
+    
+                return result
+    
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM response as JSON: {response_text}")
+                return {
+                    "success": False,
+                    "message": "LLM generated invalid JSON. Please try again."
+                }
+    
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Error in chain magic simulation: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed to simulate chain magic: {str(e)}"
+            }

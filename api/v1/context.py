@@ -1,5 +1,5 @@
 # api/v1/context.py
-from fastapi import APIRouter, HTTPException, Header, Depends, Response
+from fastapi import APIRouter, HTTPException, Header, Depends, Response, Body
 from typing import Dict, Any, Optional, List
 from models.context import BuildContextRequest, AgentContext, PromptToJsonRequest, GetAgentInputFromEnvRequest
 from services.context import ContextService
@@ -19,7 +19,12 @@ class ChainSimulationRequest(BaseModel):
     prompt: str
     agents: List[str]
 
+class ChainMagicRequest(BaseModel):
+    prompt: str
+    agents: List[str]
+    connector_prompt: str
 
+    
 @router.post("/builder", 
              response_model=str, 
              summary="Build agent context", 
@@ -184,4 +189,53 @@ async def simulate_chain_environment(agent_id: str, request: ChainSimulationRequ
         raise HTTPException(
             status_code=500,
             detail=f"Failed to simulate chain environment: {str(e)}"
+        )
+
+@router.post("/simulation/chain/magic/{agent_id}")
+async def simulate_chain_magic(
+    agent_id: str,
+    request: ChainMagicRequest,
+    x_ngina_key: Optional[str] = Header(None)
+):
+    """
+    Simulate a chain's 'magic' transformation using AI to convert environment to agent input.
+    """
+    try:
+        # Create context service
+        service = ContextService()
+
+        # Call the service method
+        result = await service.simulate_chain_magic(
+            agent_id,
+            request.prompt,
+            request.agents,
+            request.connector_prompt
+        )
+
+        # Process the result
+        if isinstance(result, dict) and "success" in result:
+            if result["success"] and "input" in result:
+                # Return 200 with the input object
+                return result["input"]
+            elif not result["success"] and "message" in result:
+                # Return 400 with the message
+                raise HTTPException(
+                    status_code=400,
+                    detail=result["message"]
+                )
+
+        # Handle unexpected result format
+        raise HTTPException(
+            status_code=500,
+            detail="Unexpected result format from service"
+        )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error in chain magic simulation endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to simulate chain magic: {str(e)}"
         )

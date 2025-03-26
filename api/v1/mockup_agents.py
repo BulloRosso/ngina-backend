@@ -233,20 +233,14 @@ def get_html_email_metadata():
         },
         "credentials": {},
         "input": {
-            "recipients": {"type": "array",
-                          "description": "An string array of email addresses"},
-            "template": {"type": "text", 
-                         "description": "Mandatory parameter. Available templates are 'business', 'romantic' or 'family'."},
-            "content": {"type": "text",
-                         "description": "Mandatory parameter. The textual content of the email in markdown format."},
-            "style": {"type": "text",
-                         "description": "Optional Parameter. Available styles are 'colorful' or 'calm'"}
+            "recipients": [ "recipient@example.com", "recipient2@example.com" ],
+            "template": "template name",
+            "content": "markdown text for the mail body",
+            "style": "enum with values 'simple' or 'colorful'"
         },
         "output": {
-            "success": {"type": "boolean", 
-                        "description": "TRUE is success, FALSE is failure"},
-            "error": {"type": "text", 
-                      "description": "error message in case of failure"}
+            "success": True,
+            "error": "error message"
         }
     }
 
