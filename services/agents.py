@@ -87,6 +87,9 @@ class AgentService:
                 "description": agent_data.get("description"),
                 "input": agent_data.get("input"),
                 "output": agent_data.get("output"),
+                # Include the example data
+                "input_example": agent_data.get("input_example"),
+                "output_example": agent_data.get("output_example"),
                 "credits_per_run": agent_data.get("credits_per_run", 0),
                 "workflow_id": agent_data.get("workflow_id"),
                 "stars": agent_data.get("stars", 0),
@@ -106,7 +109,7 @@ class AgentService:
         except Exception as e:
             logging.error(f"Error creating agent: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
-
+            
     async def discover_agent(self, discovery_url: str) -> Agent:
         try:
             async with httpx.AsyncClient() as client:
@@ -137,11 +140,15 @@ class AgentService:
                         detail=f"Agent sent unknown response (incompatible schema): {str(discovery_data)[:200]}"
                     )
 
+                # Store the original input and output examples
+                input_example = discovery_data.get("input")
+                output_example = discovery_data.get("output")
+
                 # Process input schema - now handles a single object
-                input_schema = process_schema(discovery_data.get("input"))
+                input_schema = process_schema(input_example)
 
                 # Process output schema - now handles a single object
-                output_schema = process_schema(discovery_data.get("output"))
+                output_schema = process_schema(output_example)
 
                 agent_data = {
                     "title": {
@@ -154,6 +161,9 @@ class AgentService:
                     },
                     "input": input_schema,
                     "output": output_schema,
+                    # Fix 2: Store the original example data
+                    "input_example": input_example,
+                    "output_example": output_example,
                     "icon_svg": discovery_data["metadata"].get("icon_svg"),
                     "max_execution_time_secs": discovery_data["metadata"].get("maxRuntimeSeconds"),
                     "agent_endpoint": discovery_url
@@ -167,7 +177,7 @@ class AgentService:
                 status_code=500,
                 detail=f"Agent did not respond: {str(e)}"
             )
-
+            
     async def authentication_headers(self, agent_authentication, user_id):
         """
         Get authentication headers for http request
@@ -440,6 +450,9 @@ class AgentService:
 
     async def update_agent(self, agent_id: UUID4, agent_data: dict) -> Agent:
         try:
+            # First get the existing agent to preserve fields that aren't being updated
+            existing_agent = await self.get_agent(str(agent_id))
+            
             # Convert the input dictionaries to model classes only if they're not already models
             if "title" in agent_data and isinstance(agent_data["title"], dict):
                 title_data = agent_data["title"]
@@ -475,7 +488,7 @@ class AgentService:
                 "authentication": agent.authentication,
                 "type": agent.type or "atom",
                 "icon_svg": agent.icon_svg,
-                "wrapped_url": agent.wrapped_url,
+                "wrapped_url": agent.wrapped_url if agent.wrapped_url is not None else existing_agent.wrapped_url,
                 "max_execution_time_secs": agent.max_execution_time_secs,
                 "agent_endpoint": agent.agent_endpoint
             }
