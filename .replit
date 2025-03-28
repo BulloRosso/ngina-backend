@@ -13,3 +13,15 @@ deploymentTarget = "cloudrun"
 [[ports]]
 localPort = 8000
 externalPort = 80
+
+[workflows]
+runButton = "Run"
+
+[[workflows.workflow]]
+name = "Run"
+author = 34976209
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uvicorn main:app --host 0.0.0.0 --port 5000 --reload"
