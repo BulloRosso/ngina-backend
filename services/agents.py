@@ -93,6 +93,7 @@ class AgentService:
                 "credits_per_run": agent_data.get("credits_per_run", 0),
                 "workflow_id": agent_data.get("workflow_id"),
                 "stars": agent_data.get("stars", 0),
+                "type": agent_data.get("type", "atom"),
                 "icon_svg": agent_data.get("icon_svg"),
                 "wrapped_url": agent_data.get("wrapped_url"),
                 "max_execution_time_secs": agent_data.get("max_execution_time_secs"),
