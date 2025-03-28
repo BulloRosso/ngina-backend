@@ -12,7 +12,7 @@
         -620,
         -200
       ],
-      "id": "9d7f80bf-2209-4428-8562-38eb80286225",
+      "id": "68ef7119-1bd3-4cce-ba64-50881c2c8845",
       "name": "env"
     },
     {
@@ -45,10 +45,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1100,
+        1540,
         -220
       ],
-      "id": "52cdc383-dfc0-43ec-8db1-7816b0004002",
+      "id": "edfb152e-34fe-41a0-9fb0-67246a8eb953",
       "name": "requires-human-feedback"
     },
     {
@@ -72,10 +72,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1500,
+        1940,
         -400
       ],
-      "id": "498475dd-7ffc-4d3a-8a98-0619c543e3e7",
+      "id": "76e7966b-fb86-4a52-a08e-8549f4c9f1c3",
       "name": "request-feedback"
     },
     {
@@ -87,12 +87,12 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1720,
+        2160,
         -400
       ],
-      "id": "6dd19a95-900a-4f33-9b40-5f8e9786f577",
+      "id": "0165d4d5-9f7b-4f5d-8cd6-3b97afc925a3",
       "name": "wait-for-human-feedback",
-      "webhookId": "c3ade437-461c-4590-b6a2-0a95d27fffa5"
+      "webhookId": "da9171a5-714c-47a9-969e-6b96708401a4"
     },
     {
       "parameters": {
@@ -107,7 +107,7 @@
         -840,
         -200
       ],
-      "id": "50451197-b8ee-4766-ab78-679a98598c5f",
+      "id": "a9ea9526-eb10-420b-82df-11891e180a8b",
       "name": "run-description",
       "webhookId": "${{webhook_id}}"
     },
@@ -121,10 +121,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1280,
-        -560
+        1920,
+        -580
       ],
-      "id": "53c51749-99e7-47b3-96b0-b7c2a1a59144",
+      "id": "0d2c1fa8-7b28-4c3a-a1a2-6e55e3156c57",
       "name": "Sticky Note"
     },
     {
@@ -139,7 +139,7 @@
         -840,
         -400
       ],
-      "id": "990811f1-5b8e-4497-a327-3c5db2c8a3fb",
+      "id": "88fea792-bc2d-4855-96cb-1143b53a897b",
       "name": "Sticky Note1"
     },
     {
@@ -152,10 +152,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        320,
-        -400
+        740,
+        -420
       ],
-      "id": "7dfcee43-61bb-4607-9cfe-6696bfd9951c",
+      "id": "c04d9c50-7315-4f54-aea2-9dd4df78db18",
       "name": "Sticky Note2"
     },
     {
@@ -165,10 +165,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        680,
+        1120,
         -220
       ],
-      "id": "24133126-cd96-4bdd-8f24-391fe58c0c45",
+      "id": "f215fc3b-208f-44de-ba2f-48b17fd7e128",
       "name": "data-post-processing"
     },
     {
@@ -195,10 +195,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        900,
+        1340,
         -220
       ],
-      "id": "73232c6e-8b17-476f-b36b-8760f16b74f2",
+      "id": "55cbd149-be1e-4c84-b832-c877e82a3048",
       "name": "store-to-scratchpad"
     },
     {
@@ -223,10 +223,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        460,
+        760,
         -220
       ],
-      "id": "243cbce1-0202-4903-a044-d1b0897b68ae",
+      "id": "86de67c5-1e7d-4299-8874-eff9e1665f98",
       "name": "post-to-agent"
     },
     {
@@ -238,10 +238,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        640,
+        1120,
         -400
       ],
-      "id": "5378e6e5-5ea1-47ce-8ee4-a2afc14e405c",
+      "id": "d81e18c4-88bf-4ecb-b9eb-7c5e08d283ac",
       "name": "Sticky Note3"
     },
     {
@@ -251,10 +251,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        520,
+        960,
         160
       ],
-      "id": "ac462095-9007-41fd-8287-3320a075055c",
+      "id": "8e0d9baf-cafe-4398-be73-34d261caa43e",
       "name": "task-finished"
     },
     {
@@ -277,7 +277,7 @@
         -400,
         -200
       ],
-      "id": "02c72516-d508-4829-b437-7dd392108c1e",
+      "id": "546ad8c2-00d0-4707-8a76-b8d45a48bebb",
       "name": "init-workflow-vars"
     },
     {
@@ -287,10 +287,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1520,
+        1960,
         -200
       ],
-      "id": "a4196429-eb49-4078-b0bf-67c303be0ecf",
+      "id": "da60bab5-de13-4285-98da-b4d2a7492aa8",
       "name": "Code"
     },
     {
@@ -310,10 +310,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1900,
+        2340,
         -200
       ],
-      "id": "b5f92bbf-ddfb-4e3d-820d-b7d1d6836aee",
+      "id": "4fb4c16a-3320-43d2-96b9-0d3a4a1bf0a7",
       "name": "next-agent"
     },
     {
@@ -346,7 +346,7 @@
         60,
         -200
       ],
-      "id": "9de4cbe9-50ae-4ea6-859e-1c3f2150215f",
+      "id": "26a94341-4458-42a3-b166-e406c0ecb604",
       "name": "If"
     },
     {
@@ -369,7 +369,7 @@
         -180,
         -200
       ],
-      "id": "73841a82-6085-46c8-b228-cce1044fd94d",
+      "id": "d57beccd-0cf1-4d82-b58d-1d500c1f82d0",
       "name": "agent-index"
     },
     {
@@ -384,7 +384,7 @@
         -200,
         -400
       ],
-      "id": "aaaf2372-8b1c-4a23-aa81-8afa14d03b55",
+      "id": "90160bfe-cd9c-40ab-a6e0-cc42e80146c7",
       "name": "Sticky Note4"
     },
     {
@@ -408,13 +408,128 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        280,
+        720,
         160
       ],
-      "id": "e0477dfa-5edc-478f-b0e7-521c164e6285",
+      "id": "03772573-f752-495d-a62f-4976db4737fb",
       "name": "status-finished"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "98de2ac4-ec5c-4171-8804-5fa385b761d4",
+              "leftValue": "={{$('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].connectorType}}",
+              "rightValue": "magic",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        -300
+      ],
+      "id": "5863cdb7-95db-498e-b46b-6b5a17ff5099",
+      "name": "is-magic-connector"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=${{ngina_backend_url}}/context/resolvers/get-agent-input-from-env",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "run_id",
+              "value": "={{$('run-description').first().json.body.run_id}}"
+            },
+            {
+              "name": "agent_id",
+              "value": "={{$('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        -620
+      ],
+      "id": "a3af5d3f-b0e1-4679-8881-e268fb3afdc7",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "content": "## Magic Resolver\nUses a LLM with prompt to compute input for the next agent",
+        "height": 120,
+        "width": 360
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        260,
+        -780
+      ],
+      "id": "77a8126a-6700-448e-96e6-9e426ef324c2",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "={{ $('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerName }}",
+              "value": "={{$('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerValue}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($input.first().json)}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        -620
+      ],
+      "id": "0a1acc4e-0dd8-490e-b0f8-3c001269e4e5",
+      "name": "post-created-input-to-agent"
     }
   ],
+  "pinData": {},
   "connections": {
     "env": {
       "main": [
@@ -548,7 +663,7 @@
       "main": [
         [
           {
-            "node": "post-to-agent",
+            "node": "is-magic-connector",
             "type": "main",
             "index": 0
           }
@@ -583,10 +698,812 @@
           }
         ]
       ]
+    },
+    "is-magic-connector": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "post-to-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "post-created-input-to-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "post-created-input-to-agent": {
+      "main": [
+        [
+          {
+            "node": "data-post-processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "errorWorkflow": "0W9zchLYQsYOTRW9"
-  }
+    "errorWorkflow": "0W9zchLYQsYOTRW9",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "e733c821-4277-4679-a3a8-021aeb02d7fb",
+  "meta": {
+    "instanceId": "7c690e7489a01137843a5ddf2d7133e7581be957758e45a5b620578b2b8f5463"
+  },
+  "id": "bF5x3ADd67yq2ZiK",
+  "tags": []
+}{
+  "name": "${{flow-name}}",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "=${{ngina_backend_url}}/operations/workflow/{{$('run-description').first().json.body.run_id}}/env",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -620,
+        -200
+      ],
+      "id": "68ef7119-1bd3-4cce-ba64-50881c2c8845",
+      "name": "env"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "82d96d50-49d3-4ee5-aa46-bff29070dbe8",
+              "leftValue": "={{ $('run-description').item.json.body.agents[0].hasField('requiresHumanFeedback') }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        -220
+      ],
+      "id": "edfb152e-34fe-41a0-9fb0-67246a8eb953",
+      "name": "requires-human-feedback"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('env').item.json.nginaUrl }}/api/v1/operations/workflow/{{$('run-description').first().json.body.run_id}}/request-human-feedback/{{ $('env').item.json.agents.first().id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow_id\": \"{{ $workflow.id }}\",\n  \"callback_url\": \"{{ $execution.resumeUrl }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1940,
+        -400
+      ],
+      "id": "76e7966b-fb86-4a52-a08e-8549f4c9f1c3",
+      "name": "request-feedback"
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2160,
+        -400
+      ],
+      "id": "0165d4d5-9f7b-4f5d-8cd6-3b97afc925a3",
+      "name": "wait-for-human-feedback",
+      "webhookId": "da9171a5-714c-47a9-969e-6b96708401a4"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "${{webhook_id}}",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -840,
+        -200
+      ],
+      "id": "a9ea9526-eb10-420b-82df-11891e180a8b",
+      "name": "run-description",
+      "webhookId": "${{webhook_id}}"
+    },
+    {
+      "parameters": {
+        "content": "## Human in the loop\nSends an email to the recipients which contains a link to the frontend",
+        "height": 120,
+        "width": 320,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        -580
+      ],
+      "id": "0d2c1fa8-7b28-4c3a-a1a2-6e55e3156c57",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Pass variables & keys\nThese steps receives the INPUT JSON and intialize variables + condition switches for the following steps (similar to .env in software development)",
+        "height": 140,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        -400
+      ],
+      "id": "88fea792-bc2d-4855-96cb-1143b53a897b",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Call agent\nCall the agent by POSTing input variables and authentication information",
+        "height": 120,
+        "width": 260,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        740,
+        -420
+      ],
+      "id": "c04d9c50-7315-4f54-aea2-9dd4df78db18",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -220
+      ],
+      "id": "f215fc3b-208f-44de-ba2f-48b17fd7e128",
+      "name": "data-post-processing"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=${{ngina_backend_url}}/operations/workflow/{{$('run-description').first().json.body.run_id}}/results/{{ $('run-description').item.json.body.agents.first().id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ \n{ \n  \"agentId\": $('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].id ,\n  \"executionId\": $execution.id ,\n  \"resultJson\": $input.first().json\n}\n}}",
+        "options": {
+          "timeout": 100000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        -220
+      ],
+      "id": "55cbd149-be1e-4c84-b832-c877e82a3048",
+      "name": "store-to-scratchpad"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "={{ $('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerName }}",
+              "value": "={{$('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerValue}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].input)}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -220
+      ],
+      "id": "86de67c5-1e7d-4299-8874-eff9e1665f98",
+      "name": "post-to-agent"
+    },
+    {
+      "parameters": {
+        "content": "## Data Handling\nApply transformations to the JSON OUTPUT to satisfy INPUT JSON schema requirments of next agent (or final result)",
+        "height": 120,
+        "width": 380
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        -400
+      ],
+      "id": "d81e18c4-88bf-4ecb-b9eb-7c5e08d283ac",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        160
+      ],
+      "id": "8e0d9baf-cafe-4398-be73-34d261caa43e",
+      "name": "task-finished"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "02d5645e-e6e9-4e49-bbcd-2b3a27dc2bfa",
+              "name": "agentIndex",
+              "value": 0,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -400,
+        -200
+      ],
+      "id": "546ad8c2-00d0-4707-8a76-b8d45a48bebb",
+      "name": "init-workflow-vars"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(\"agentIndex\")\nconsole.log($('agent-index').item.json.agentIndex )\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        -200
+      ],
+      "id": "da60bab5-de13-4285-98da-b4d2a7492aa8",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "20aa8146-baf1-4cf2-b8ef-8d24fe005ba0",
+              "name": "agentIndex",
+              "value": "={{ $('agent-index').item.json.agentIndex + 1}} ",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2340,
+        -200
+      ],
+      "id": "4fb4c16a-3320-43d2-96b9-0d3a4a1bf0a7",
+      "name": "next-agent"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "96a736de-e659-4fe0-8d03-b2eb6de7aba4",
+              "leftValue": "={{ $json.agentIndex }}",
+              "rightValue": "={{ $('run-description').item.json.body.agents.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        60,
+        -200
+      ],
+      "id": "26a94341-4458-42a3-b166-e406c0ecb604",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "373fd833-1246-42c5-a0a6-46b0f9948985",
+              "name": "agentIndex",
+              "value": "={{ $json.agentIndex }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -180,
+        -200
+      ],
+      "id": "d57beccd-0cf1-4d82-b58d-1d500c1f82d0",
+      "name": "agent-index"
+    },
+    {
+      "parameters": {
+        "content": "## Chain\nLoop over the initally passed agents starting with agentIndex = 0",
+        "height": 120,
+        "width": 360
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        -400
+      ],
+      "id": "90160bfe-cd9c-40ab-a6e0-cc42e80146c7",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=${{ngina_backend_url}}/operations/run/{{$('run-description').first().json.body.run_id}}/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"status\": \"success\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        160
+      ],
+      "id": "03772573-f752-495d-a62f-4976db4737fb",
+      "name": "status-finished"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "98de2ac4-ec5c-4171-8804-5fa385b761d4",
+              "leftValue": "={{$('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].connectorType}}",
+              "rightValue": "magic",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        280,
+        -300
+      ],
+      "id": "5863cdb7-95db-498e-b46b-6b5a17ff5099",
+      "name": "is-magic-connector"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=${{ngina_backend_url}}/context/resolvers/get-agent-input-from-env",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ngina-key",
+              "value": "={{ $('env').item.json.ngina_workflow_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "run_id",
+              "value": "={{$('run-description').first().json.body.run_id}}"
+            },
+            {
+              "name": "agent_id",
+              "value": "={{$('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        -620
+      ],
+      "id": "a3af5d3f-b0e1-4679-8881-e268fb3afdc7",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "content": "## Magic Resolver\nUses a LLM with prompt to compute input for the next agent",
+        "height": 120,
+        "width": 360
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        260,
+        -780
+      ],
+      "id": "77a8126a-6700-448e-96e6-9e426ef324c2",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('run-description').item.json.body.agents[$('agent-index').item.json.agentIndex].url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "={{ $('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerName }}",
+              "value": "={{$('run-description').first().json.body.agents[$('agent-index').item.json.agentIndex].headerValue}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($input.first().json)}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        -620
+      ],
+      "id": "0a1acc4e-0dd8-490e-b0f8-3c001269e4e5",
+      "name": "post-created-input-to-agent"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "env": {
+      "main": [
+        [
+          {
+            "node": "init-workflow-vars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "requires-human-feedback": {
+      "main": [
+        [
+          {
+            "node": "request-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request-feedback": {
+      "main": [
+        [
+          {
+            "node": "wait-for-human-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wait-for-human-feedback": {
+      "main": [
+        [
+          {
+            "node": "next-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "run-description": {
+      "main": [
+        [
+          {
+            "node": "env",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "data-post-processing": {
+      "main": [
+        [
+          {
+            "node": "store-to-scratchpad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "store-to-scratchpad": {
+      "main": [
+        [
+          {
+            "node": "requires-human-feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "post-to-agent": {
+      "main": [
+        [
+          {
+            "node": "data-post-processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "init-workflow-vars": {
+      "main": [
+        [
+          {
+            "node": "agent-index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "next-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "next-agent": {
+      "main": [
+        [
+          {
+            "node": "agent-index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "is-magic-connector",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "status-finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent-index": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "status-finished": {
+      "main": [
+        [
+          {
+            "node": "task-finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "is-magic-connector": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "post-to-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "post-created-input-to-agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "post-created-input-to-agent": {
+      "main": [
+        [
+          {
+            "node": "data-post-processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "0W9zchLYQsYOTRW9",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "e733c821-4277-4679-a3a8-021aeb02d7fb",
+  "meta": {
+    "instanceId": "7c690e7489a01137843a5ddf2d7133e7581be957758e45a5b620578b2b8f5463"
+  },
+  "id": "bF5x3ADd67yq2ZiK",
+  "tags": []
 }
