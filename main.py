@@ -5,10 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 from api.v1 import router as v1_router
-from supabase import create_client
-from dotenv import load_dotenv
 import logging
 import os
+from services.db_schema_creation import get_db_schema_service
 
 # Custom OpenAPI metadata
 def custom_openapi():
@@ -63,16 +62,37 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('app.log')
+        logging.StreamHandler()
     ]
 )
 
-# Initialize Supabase client
-supabase = create_client(
-    supabase_url = os.getenv("SUPABASE_URL"),
-    supabase_key = os.getenv("SUPABASE_KEY")
-)
+logger  = logging.getLogger(__name__)
+logger.info("Starting nginA API")
+
+# POSTGRESQL (Supabase) connection via 
+# TRANSACTION POOLER (6543)irect connection via pooler
+db_user = os.getenv("PGUSER") 
+db_password = os.getenv("PGPASSWORD")
+db_host = os.getenv("PGHOST")
+db_port = os.getenv("PGPORT")
+db_name = os.getenv("PGDATABASE")
+
+db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+# Initialize database schema service
+db_schema_service = get_db_schema_service(db_url)
+
+# Application startup event
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Application starting up...")
+    try:
+        # Initialize database schema - default to 'app' schema if not specified
+        schema_name = os.getenv("DB_SCHEMA", "test")
+        db_schema_service.create_tables(schema_name)
+        logger.info(f"Database tables initialized in schema '{schema_name}'")
+    except Exception as e:
+        logger.error(f"Error initializing database schema: {str(e)}")
 
 # Root endpoint
 @app.get("/", include_in_schema=False)

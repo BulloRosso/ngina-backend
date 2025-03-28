@@ -1,7 +1,7 @@
 # api/v1/__init__.py
 from fastapi import APIRouter
 from .auth  import router as auth_router
-from .supportbot import router as supportbot_router
+# from .supportbot import router as supportbot_router
 from .agents import router as agents_router
 from .team import router as team_router
 from .mockup_agents import router as mockup_agents_router
@@ -22,7 +22,7 @@ from .dashboardskpi import router as dashboardskpi_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
-router.include_router(supportbot_router)
+# router.include_router(supportbot_router)
 router.include_router(agents_router)
 router.include_router(team_router)
 router.include_router(mockup_agents_router)
