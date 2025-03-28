@@ -513,23 +513,142 @@ class OperationService:
                 # Prepare payload with initial parameters
                 payload = None
                 if operation_data.get("agent_id") and operation_data.get("results") and operation_data["results"].get("inputParameters"):
-                    payload = {
-                        "run_id": run_id,  # Use the ID from the saved operation
-                        "agents": [
-                            {
-                                "id": operation_data["agent_id"],
-                                "url": agent_endpoint_url or "",  # Use the stored endpoint URL
-                                "input": operation_data["results"]["inputParameters"]
+
+                    agent_type = agent.get("type", "atom")
+
+                    if agent_type == "atom":
+                        payload = {
+                            "run_id": run_id,  # Use the ID from the saved operation
+                            "agents": [
+                                {
+                                    "id": operation_data["agent_id"],
+                                    "url": agent_endpoint_url or "",  # Use the stored endpoint URL
+                                    "input": operation_data["results"]["inputParameters"]
+                                }
+                            ]
+                        }
+                        logger.info("-------------Adding auth to playload")
+                        
+                        payload = await self.add_authentication_to_payload(
+                            agent_authentication=agent_authentication,
+                            user_id=operation_data.get("user_id", ""),
+                            payload=payload
+                        )
+                    elif agent_type == "chain":
+                        # Handle chain type agents
+                        configuration = agent.get("configuration", {})
+                        chain_agents = configuration.get("agents", [])
+
+                        if not chain_agents:
+                            logger.warning(f"Chain agent {operation_data['agent_id']} has no agents in configuration")
+                            chain_agents = []
+
+                        # Create a new list to store enriched agent data
+                        enriched_agents = []
+                        agent_service = AgentService()
+                        
+                        for idx, chain_agent in enumerate(chain_agents):
+                            # Get the agent ID from the chain
+                            agent_id = chain_agent.get("agentId")
+
+                            if not agent_id:
+                                logger.warning(f"Agent at index {idx} in chain has no agentId")
+                                continue
+
+                            # Create a copy of the chain agent to avoid modifying the original
+                            enriched_agent = chain_agent.copy()
+
+                            try:
+                                # Use the AgentService to get agent details
+                                sub_agent = await agent_service.get_agent(agent_id)
+
+                                # Add URL from the agent data
+                                enriched_agent["url"] = sub_agent.agent_endpoint or ""
+
+                                # Add input parameters to the first agent only
+                                if idx == 0:
+                                    enriched_agent["input"] = operation_data["results"]["inputParameters"]
+
+                                # Get authentication headers for this agent
+                                header_name, header_value = await agent_service.authentication_headers(
+                                    sub_agent.authentication,
+                                    operation_data.get("user_id", "")
+                                )
+
+                                # Add authentication headers to the agent
+                                enriched_agent["headerName"] = header_name
+                                enriched_agent["headerValue"] = header_value
+
+                            except Exception as e:
+                                logger.warning(f"Error getting agent {agent_id} details: {str(e)}")
+                                # Keep the agent in the chain but without URL
+                                enriched_agent["url"] = ""
+                                enriched_agent["headerName"] = "x-ngina-auth-none"
+                                enriched_agent["headerValue"] = "-"
+
+                                # Add input parameters to the first agent even if there was an error
+                                if idx == 0:
+                                    enriched_agent["input"] = operation_data["results"]["inputParameters"]
+
+                            enriched_agents.append(enriched_agent)
+
+                        # Create the payload with the enriched agents
+                        payload = {
+                            "run_id": run_id,
+                            "agents": enriched_agents
+                        }
+
+                        logger.info(f"-------------Adding auth to payload for chain agent with {len(enriched_agents)} sub-agents")
+
+                        # For chain agents, we need to add authentication for each agent in the chain
+                        for agent_idx, chain_agent in enumerate(payload["agents"]):
+                            agent_id = chain_agent.get("agentId")
+                            if not agent_id:
+                                continue
+
+                            # Get agent details again (could be optimized by storing above)
+                            agent_result = self.supabase.table("agents")\
+                                .select("*")\
+                                .eq("id", agent_id)\
+                                .execute()
+
+                            if not agent_result.data:
+                                continue
+
+                            sub_agent = agent_result.data[0]
+                            sub_agent_authentication = sub_agent.get("authentication", "")
+
+                            # Create a temporary payload with just this agent
+                            temp_payload = {
+                                "run_id": run_id,
+                                "agents": [chain_agent]
                             }
-                        ]
-                    }
-                    logger.info("-------------Adding auth to playload")
-                    
-                    payload = await self.add_authentication_to_payload(
-                        agent_authentication=agent_authentication,
-                        user_id=operation_data.get("user_id", ""),
-                        payload=payload
-                    )
+
+                            # Add authentication for this agent
+                            temp_payload = await self.add_authentication_to_payload(
+                                agent_authentication=sub_agent_authentication,
+                                user_id=operation_data.get("user_id", ""),
+                                payload=temp_payload
+                            )
+
+                            # Update the original agent in the payload with the authentication headers
+                            if temp_payload and "agents" in temp_payload and len(temp_payload["agents"]) > 0:
+                                temp_agent = temp_payload["agents"][0]
+                                payload["agents"][agent_idx]["headerName"] = temp_agent.get("headerName", "")
+                                payload["agents"][agent_idx]["headerValue"] = temp_agent.get("headerValue", "")
+
+                    elif agent_type == "dynamic":
+                        # Placeholder for dynamic agent type
+                        logger.info("Dynamic agent type detected - preparing payload")
+                        # TODO: Implement dynamic agent payload construction
+                        # This would need to be implemented based on requirements for dynamic agents
+                        payload = {
+                            "run_id": run_id,
+                            "agents": [],  # To be filled with dynamic agent logic
+                            "type": "dynamic"
+                        }
+    
+                        logger.warning("Dynamic agent payload construction not yet implemented")
                         
                     logging.info(f"-----------------Prepared webhook payload: {payload}")
                 else:

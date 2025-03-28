@@ -96,7 +96,8 @@ class AgentService:
                 "icon_svg": agent_data.get("icon_svg"),
                 "wrapped_url": agent_data.get("wrapped_url"),
                 "max_execution_time_secs": agent_data.get("max_execution_time_secs"),
-                "agent_endpoint": agent_data.get("agent_endpoint")
+                "agent_endpoint": agent_data.get("agent_endpoint"),
+                "configuration": agent_data.get("configuration")
             }
 
             result = self.supabase.table("agents").insert(insert_data).execute()
@@ -477,17 +478,18 @@ class AgentService:
             update_data = {
                 "title": agent.title.model_dump() if agent.title else None,
                 "description": agent.description.model_dump() if agent.description else None,
-                "input": agent_data.get("input"),  # Use original input dictionary
-                "output": agent_data.get("output"),  # Use original output dictionary
+                "input": agent_data.get("input") , 
+                "output": agent_data.get("output"),  
                 "input_example": agent_data.get("input_example"),
                 "output_example": agent_data.get("output_example"),
                 "credits_per_run": agent.credits_per_run,
                 "workflow_id": agent.workflow_id,
                 "stars": agent.stars,
                 "content_extraction_file_extensions": agent.content_extraction_file_extensions,
-                "authentication": agent.authentication,
+                "authentication": agent.authentication if agent.authentication is not None else existing_agent.authentication,
                 "type": agent.type or "atom",
-                "icon_svg": agent.icon_svg,
+                "icon_svg": agent.icon_svg if agent.icon_svg is not None else existing_agent.icon_svg,
+                "configuration": agent.configuration if agent.configuration is not None else existing_agent.configuration,
                 "wrapped_url": agent.wrapped_url if agent.wrapped_url is not None else existing_agent.wrapped_url,
                 "max_execution_time_secs": agent.max_execution_time_secs,
                 "agent_endpoint": agent.agent_endpoint
