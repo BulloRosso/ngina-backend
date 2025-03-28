@@ -88,7 +88,6 @@ pure_eval==0.2.3
 pyasn1==0.6.1
 pycparser==2.22
 pydantic==2.10.3
-psycopg2-binary>=2.9.9
 pydantic-settings==2.6.1
 pydantic_core==2.27.1
 Pygments==2.18.0
