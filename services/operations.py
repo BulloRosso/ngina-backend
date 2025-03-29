@@ -668,11 +668,11 @@ class OperationService:
             logging.error(f"Error creating/updating operation: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to create/update operation: {str(e)}")
     
-    async def get_operation(self, operation_id: int) -> Operation:
+    async def get_operation(self, operation_id: UUID4) -> Operation:
         try:
             result = self.supabase.table("agent_runs")\
                 .select("*")\
-                .eq("id", operation_id)\
+                .eq("id", str(operation_id))\
                 .execute()
 
             if not result.data:

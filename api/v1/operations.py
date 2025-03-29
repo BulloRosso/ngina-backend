@@ -22,7 +22,7 @@ async def create_or_update_operation(operation_data: dict, current_user: UUID4 =
     return await service.create_or_update_operation(operation_data)
 
 @router.get("/run/{operation_id}", response_model=Operation)
-async def get_operation(operation_id: int, current_user: UUID4 = Depends(get_current_user)):
+async def get_operation(operation_id: UUID4, current_user: UUID4 = Depends(get_current_user)):
     service = OperationService()
     return await service.get_operation(operation_id)
 

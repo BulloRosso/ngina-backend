@@ -1,6 +1,6 @@
 # /main.py
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, status , Request
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
@@ -8,6 +8,9 @@ from api.v1 import router as v1_router
 import logging
 import os
 from services.db_schema_creation import get_db_schema_service
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel
 
 # Custom OpenAPI metadata
 def custom_openapi():
@@ -82,6 +85,14 @@ db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 # Initialize database schema service
 db_schema_service = get_db_schema_service(db_url)
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=jsonable_encoder({"detail": exc.errors(), "body": exc.body}),
+    )
+    
 # Application startup event
 @app.on_event("startup")
 async def startup_event():
