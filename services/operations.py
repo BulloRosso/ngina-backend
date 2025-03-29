@@ -549,10 +549,10 @@ class OperationService:
                         
                         for idx, chain_agent in enumerate(chain_agents):
                             # Get the agent ID from the chain
-                            agent_id = chain_agent.get("agentId")
+                            agent_id = chain_agent.get("id")
 
                             if not agent_id:
-                                logger.warning(f"Agent at index {idx} in chain has no agentId")
+                                logger.warning(f"Agent at index {idx} in chain has no id")
                                 continue
 
                             # Create a copy of the chain agent to avoid modifying the original
@@ -602,7 +602,7 @@ class OperationService:
 
                         # For chain agents, we need to add authentication for each agent in the chain
                         for agent_idx, chain_agent in enumerate(payload["agents"]):
-                            agent_id = chain_agent.get("agentId")
+                            agent_id = chain_agent.get("id")
                             if not agent_id:
                                 continue
 
