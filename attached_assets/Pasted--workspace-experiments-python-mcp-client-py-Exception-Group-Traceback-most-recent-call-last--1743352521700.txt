@@ -1,0 +1,32 @@
+~/workspace/experiments$ python mcp_client.py
+  + Exception Group Traceback (most recent call last):
+  |   File "/home/runner/workspace/experiments/mcp_client.py", line 20, in <module>
+  |     asyncio.run(run())
+  |   File "/nix/store/clx0mcir7qw8zk36zbr4jra789g3knf6-python3-3.11.10/lib/python3.11/asyncio/runners.py", line 190, in run
+  |     return runner.run(main)
+  |            ^^^^^^^^^^^^^^^^
+  |   File "/nix/store/clx0mcir7qw8zk36zbr4jra789g3knf6-python3-3.11.10/lib/python3.11/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/nix/store/clx0mcir7qw8zk36zbr4jra789g3knf6-python3-3.11.10/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "/home/runner/workspace/experiments/mcp_client.py", line 5, in run
+  |     async with sse_client(url="https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev:8080/sse") as streams:
+  |   File "/nix/store/clx0mcir7qw8zk36zbr4jra789g3knf6-python3-3.11.10/lib/python3.11/contextlib.py", line 210, in __aenter__
+  |     return await anext(self.gen)
+  |            ^^^^^^^^^^^^^^^^^^^^^
+  |   File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/mcp/client/sse.py", line 43, in sse_client
+  |     async with anyio.create_task_group() as tg:
+  |   File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 772, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/mcp/client/sse.py", line 53, in sse_client
+    |     event_source.response.raise_for_status()
+    |   File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/httpx/_models.py", line 763, in raise_for_status
+    |     raise HTTPStatusError(message, request=request, response=self)
+    | httpx.HTTPStatusError: Server error '502 Bad Gateway' for url 'https://ed5ce8c5-8b5f-4bdc-b912-26e09e42b363-00-2ivmymeocpnno.janeway.replit.dev:8080/sse'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+    +------------------------------------
