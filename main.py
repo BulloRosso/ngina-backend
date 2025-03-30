@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 from api.v1 import router as v1_router
+from api.v1.mcp import router as mcp_router
 import logging
 import os
 from services.db_schema_creation import get_db_schema_service
@@ -160,3 +161,4 @@ async def redoc_html():
     )
 
 app.include_router(v1_router, prefix="/api")
+app.include_router(mcp_router, prefix="/api/v1")
