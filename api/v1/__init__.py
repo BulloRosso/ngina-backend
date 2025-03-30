@@ -19,6 +19,7 @@ from .users import router as users_router
 from .diagnostics import router as diagnostics_router 
 from .dashboardbot import router as dashboardbot_router
 from .dashboardskpi import router as dashboardskpi_router
+from .mcp import router as mcp_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
@@ -40,3 +41,4 @@ router.include_router(users_router)
 router.include_router(diagnostics_router)
 router.include_router(dashboardbot_router)
 router.include_router(dashboardskpi_router)
+router.include_router(mcp_router)

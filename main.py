@@ -161,4 +161,3 @@ async def redoc_html():
     )
 
 app.include_router(v1_router, prefix="/api")
-app.include_router(mcp_router, prefix="/api/v1")
