@@ -396,10 +396,41 @@ class ContextService:
             # Extract the response text
             response_text = response.choices[0].message.content.strip()
 
-            # 6. Parse the response as JSON
+            # 6. Parse & log the response as JSON
             try:
                 result = json.loads(response_text)
 
+                # Append LLM response to connectorResults in agent_runs
+                try:
+                    # Fetch the latest results again to ensure we're not overwriting
+                    run_id_str = str(run_id)
+                    agent_id_str = str(agent_id)
+
+                    existing_result = self.supabase.table("agent_runs").select("results").eq("id", run_id_str).execute()
+                    current_results = existing_result.data[0].get("results") if existing_result.data else {}
+
+                    # Ensure current_results is a dict
+                    if isinstance(current_results, str):
+                        current_results = json.loads(current_results)
+
+                    # Initialize connectorResults if not present
+                    if "connectorResults" not in current_results or not isinstance(current_results["connectorResults"], list):
+                        current_results["connectorResults"] = []
+
+                    # Append new LLM response
+                    current_results["connectorResults"].append({
+                        "agentId": agent_id_str,
+                        "response": result  # This is the parsed JSON result from LLM
+                    })
+
+                    # Update Supabase row
+                    self.supabase.table("agent_runs").update({
+                        "results": current_results
+                    }).eq("id", run_id_str).execute()
+
+                except Exception as e:
+                    logger.warning(f"Failed to log connectorResults to Supabase: {str(e)}")
+                    
                 # Validate that the result has the expected format
                 if "success" not in result:
                     logger.error(f"LLM response missing 'success' field: {response_text}")
@@ -433,8 +464,11 @@ class ContextService:
                             "message": f"Extracted input is missing required fields: {', '.join(missing_fields)}"
                         }
 
+
+                
                 return result
 
+            
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse LLM response as JSON: {response_text}")
                 return {

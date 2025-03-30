@@ -11,6 +11,25 @@ from services.db_schema_creation import get_db_schema_service
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("ngina-mpc-test-srv", port=5001, timeout=30)
+
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """
+    Add two integers and return sum.
+    """
+    return a + b 
+
+@mcp.tool()
+def subtract(a: int, b: int) -> int:
+    """
+    Subtract two integers and return difference.
+    """
+    return a - b
+
+mcp.run(transport='sse')
 
 # Custom OpenAPI metadata
 def custom_openapi():
