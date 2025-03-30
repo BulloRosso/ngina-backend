@@ -15,7 +15,7 @@ class Tool(BaseModel):
 
 @router.post("/tools", response_model=List[Tool])
 async def get_tools():
-    async with sse_client(url="http://0.0.0.0:5001/sse") as streams:
+    async with sse_client(url="http://127.0.0.1:5001/sse") as streams:
         async with ClientSession(*streams) as session:
             await session.initialize()
             tools = await session.list_tools()
