@@ -11,6 +11,7 @@ from genson import SchemaBuilder
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 
 class SchemaGenerationRequest(BaseModel):
     data: Any
