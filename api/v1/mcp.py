@@ -20,8 +20,8 @@ class ToolCallRequest(BaseModel):
     mcp_server_url: str = default_mcp_server_url
     toolName: str
     toolArgs: Dict[str, Any]
-    
-@router.post("/tools/sse", response_model=List[Tool])
+
+@router.post("/sse/tools/", response_model=List[Tool])
 async def get_tools(server_config: dict):
     """
     Lists the available tools on a server
@@ -46,7 +46,7 @@ async def get_tools(server_config: dict):
                 for tool in tools.tools
             ]
 
-@router.post("/sse/tools/call")
+@router.post("/sse/tool/call")
 async def call_tool(request: ToolCallRequest):
     """
     Call a specific MCP tool with the provided arguments.

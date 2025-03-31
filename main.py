@@ -15,28 +15,7 @@ from pydantic import BaseModel
 from mcp.server.fastmcp import FastMCP
 import asyncio
 from contextlib import asynccontextmanager
-
-mcp = FastMCP("ngina-mpc-test-srv", port=5001, timeout=30)
-
-@mcp.tool()
-def add(a: int, b: int) -> int:
-    """
-    Add two integers and return sum.
-    """
-    return a + b 
-
-@mcp.tool() 
-def subtract(a: int, b: int) -> int:
-    """
-    Subtract two integers and return difference.
-    """
-    return a - b
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Start MCP server
-    asyncio.create_task(mcp.run_sse_async())
-    yield
+from mcp_server import create_mcp_server
 
 # Custom OpenAPI metadata
 def custom_openapi():
@@ -57,6 +36,37 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
+
+# Initialize MCP at module level, but don't run it yet
+mcp_instance = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global mcp_instance
+
+    # Initialize MCP server
+    mcp_instance = await create_mcp_server()
+
+    # Start MCP server in a background task
+    task = asyncio.create_task(mcp_instance.run_sse_async())
+
+    # Store the task so it doesn't get garbage collected
+    app.state.mcp_task = task
+
+    logger.info("MCP server started")
+
+    yield
+
+    # Cleanup: cancel the task when shutting down
+    if hasattr(app.state, "mcp_task"):
+        app.state.mcp_task.cancel()
+        try:
+            await app.state.mcp_task
+        except asyncio.CancelledError:
+            pass
+
+    logger.info("MCP server stopped")
+    
 # Initialize FastAPI with metadata
 app = FastAPI(
     title="nginA API",
@@ -67,6 +77,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+    
 # Set custom OpenAPI schema function
 app.openapi = custom_openapi
 
