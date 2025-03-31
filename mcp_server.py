@@ -64,7 +64,7 @@ async def register_agents_as_tools(mcp):
 
                 # Create tool name from title - replace spaces with underscores
                 tool_name = agent.title.en.replace(" ", "_") if agent.title.en else f"agent_{agent_id}"
-
+                tool_name = str.lower(tool_name)
                 # Get description
                 description = agent.description.en if agent.description and agent.description.en else "No description provided"
 
